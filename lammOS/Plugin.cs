@@ -1,14 +1,15 @@
-using BepInEx;
+﻿using BepInEx;
 using BepInEx.Configuration;
 using HarmonyLib;
 using System;
 using System.Collections.Generic;
 using System.Reflection;
+using TMPro;
 using UnityEngine;
 
 namespace lammOS
 {
-    [BepInPlugin("lammas123.lammOS", "lammOS", "1.0.0")]
+    [BepInPlugin("lammas123.lammOS", "lammOS", "1.0.1")]
     public class lammOS : BaseUnityPlugin
     {
         public static lammOS Instance;
@@ -20,6 +21,8 @@ namespace lammOS
         public static Dictionary<string, PurchaseableUnlockable> purchaseableUnlockables = new Dictionary<string, PurchaseableUnlockable>();
         public static Dictionary<string, Entity> entities = new Dictionary<string, Entity>();
         public static Dictionary<string, Log> logs = new Dictionary<string, Log>();
+
+        public static int maxDropshipItems = 12;
 
         private static bool addedCodeCommands = false;
         private static readonly Dictionary<string, Command> commands = new Dictionary<string, Command>();
@@ -36,6 +39,9 @@ namespace lammOS
         internal static int startupNodeIndex = -1;
         internal static string oldHelpText = "";
         internal static int helpNodeIndex = -1;
+
+        internal static GameObject Clock;
+        internal static TextMeshProUGUI ClockText => Clock.GetComponent<TextMeshProUGUI>();
 
         internal static ConfigEntry<bool> DisableNewTerminalOS;
         internal static ConfigEntry<int> CharsToAutocomplete;
@@ -116,11 +122,9 @@ namespace lammOS
                 if (terminalKeywords.ContainsKey(terminalKeyword.word))
                 {
                     Logger.LogWarning("A terminal keyword has already been added with the name: '" + terminalKeyword.word + "'");
+                    continue;
                 }
-                else
-                {
-                    terminalKeywords.Add(terminalKeyword.word, terminalKeyword);
-                }
+                terminalKeywords.Add(terminalKeyword.word, terminalKeyword);
             }
 
             terminalSyncedSounds = new Dictionary<string, int>
@@ -223,7 +227,8 @@ namespace lammOS
                         {
                             break;
                         }
-                        else if (itemId2.StartsWith(shortestChars))
+                        
+                        if (itemId2.StartsWith(shortestChars))
                         {
                             shortest = false; ;
                             break;
@@ -267,7 +272,8 @@ namespace lammOS
                         {
                             break;
                         }
-                        else if (itemId2.StartsWith(shortestChars))
+                        
+                        if (itemId2.StartsWith(shortestChars))
                         {
                             shortest = false;
                             break;
@@ -281,7 +287,8 @@ namespace lammOS
                             {
                                 break;
                             }
-                            else if (unlockableId2.StartsWith(shortestChars))
+                            
+                            if (unlockableId2.StartsWith(shortestChars))
                             {
                                 shortest = false;
                                 break;
@@ -596,7 +603,8 @@ namespace lammOS
                         {
                             break;
                         }
-                        else if (entity2.displayName.ToLower().StartsWith(shortestChars))
+                        
+                        if (entity2.displayName.ToLower().StartsWith(shortestChars))
                         {
                             shortest = false;
                             break;
@@ -623,6 +631,7 @@ namespace lammOS
                 Logger.LogWarning("The entity '" + entity.enemyName + "' could not successfully be loaded.");
             }
             entitiesWithoutEntry = new List<EnemyType>();
+
             foreach (TerminalNode node in entriesWithoutEntity)
             {
                 Logger.LogWarning("The bestiary entry '" + node.creatureName + "' could not be matched to an entity.");
@@ -650,7 +659,8 @@ namespace lammOS
                         {
                             break;
                         }
-                        else if (logId2.StartsWith(shortestChars))
+                        
+                        if (logId2.StartsWith(shortestChars))
                         {
                             shortest = false;
                             break;
@@ -896,12 +906,12 @@ namespace lammOS
         [HarmonyPatch(typeof(Terminal))]
         public static partial class TerminalEvents
         {
-            [HarmonyPatch("Awake")]
+            [HarmonyPatch("Start")]
             [HarmonyPostfix]
             [HarmonyPriority(-2147483648)]
-            public static void PostAwake(ref Terminal __instance)
+            public static void PostStart(ref Terminal __instance)
             {
-                Instance.Logger.LogInfo("Terminal Awake method called");
+                Instance.Logger.LogInfo("Terminal Start method called");
 
                 Instance.LoadVariables(ref __instance);
 
@@ -911,20 +921,14 @@ namespace lammOS
                     return;
                 }
 
-                oldSetupText = "";
-                setupNodeIndex = -1;
-                oldWelcomeText = "";
-                oldStartupText = "";
-                startupNodeIndex = -1;
-                oldHelpText = "";
-                helpNodeIndex = -1;
                 for (int i = 0; i < __instance.terminalNodes.specialNodes.Count; i++)
                 {
                     if (setupNodeIndex != -1 && startupNodeIndex != -1 && helpNodeIndex != -1)
                     {
                         break;
                     }
-                    else if(__instance.terminalNodes.specialNodes[i].displayText.StartsWith("BG IG, A System-Act Ally"))
+                    
+                    if(__instance.terminalNodes.specialNodes[i].displayText.StartsWith("BG IG, A System-Act Ally"))
                     {
                         oldSetupText = __instance.terminalNodes.specialNodes[i].displayText;
                         oldWelcomeText = __instance.terminalNodes.specialNodes[i].terminalOptions[0].result.terminalOptions[0].result.displayText;
@@ -937,13 +941,31 @@ namespace lammOS
                         oldStartupText = __instance.terminalNodes.specialNodes[i].displayText;
                         startupNodeIndex = i;
                         __instance.terminalNodes.specialNodes[i].displayText = newStartupText;
+                        __instance.terminalNodes.specialNodes[i].maxCharactersToType = 99999;
                     }
                     else if(__instance.terminalNodes.specialNodes[i].displayText.StartsWith(">MOONS\n"))
                     {
                         oldHelpText = __instance.terminalNodes.specialNodes[i].displayText;
                         helpNodeIndex = i;
                         __instance.terminalNodes.specialNodes[i].displayText = newStartupText;
+                        __instance.terminalNodes.specialNodes[i].maxCharactersToType = 99999;
                     }
+                }
+
+                Transform terminalMainContainer = __instance.transform.parent.parent.Find("Canvas").Find("MainContainer");
+                try
+                {
+                    Clock = terminalMainContainer.Find("Clock").gameObject;
+                }
+                catch
+                {
+                    GameObject creditsObject = terminalMainContainer.Find("CurrentCreditsNum").gameObject;
+                    Clock = Instantiate(creditsObject, terminalMainContainer);
+                    Clock.name = "Clock";
+                    Clock.transform.localPosition = new Vector3(195f, creditsObject.transform.localPosition.y + 9f, creditsObject.transform.localPosition.z);
+                    Clock.transform.localScale = new Vector3(0.75f, 0.75f, 1);
+                    ClockText.text = "";
+                    ClockText.alignment = TextAlignmentOptions.TopRight;
                 }
 
                 if (addedCodeCommands)
@@ -971,7 +993,7 @@ namespace lammOS
                 }
 
                 TerminalNode node = ScriptableObject.CreateInstance<TerminalNode>();
-                node.displayText = ">";
+                node.displayText = "";
                 node.clearPreviousText = true;
                 node.terminalEvent = "";
 
@@ -986,6 +1008,7 @@ namespace lammOS
                 if (Instance.IsShortcut(commandId))
                 {
                     commandId = Instance.GetCommandIdByShortcut(commandId);
+                    __instance.screenText.text = __instance.screenText.text.Substring(0, __instance.screenText.text.Length - __instance.textAdded) + commandId + input.Substring(offset);
                 }
 
                 Command command = Instance.GetCommand(commandId);
@@ -993,34 +1016,61 @@ namespace lammOS
                 {
                     node.displayText = "Unknown command: '" + commandId + "'\n\n>";
                     node.playSyncedClip = terminalSyncedSounds["error"];
+                    __result = node;
+                    return false;
                 }
-                else
+                
+                try
                 {
-                    try
-                    {
-                        command.Execute(ref __instance, input.Substring(offset == input.Length ? offset : offset + 1), ref node);
-                        if (node.displayText == "")
-                        {
-                            node.displayText = ">";
-                        }
-                        else if (node.displayText != ">")
-                        {
-                            node.displayText = node.displayText.TrimEnd('\n') + "\n\n>";
-                        }
-                    }
-                    catch (Exception e)
-                    {
-                        node = ScriptableObject.CreateInstance<TerminalNode>();
-                        node.displayText = "An error occurred executing the command: '" + commandId + "'\n\n>";
-                        node.clearPreviousText = true;
-                        node.terminalEvent = "";
-                        node.playSyncedClip = terminalSyncedSounds["error"];
-                        Instance.Logger.LogError("An error occurred executing the command: '" + commandId + "'\n" + e.ToString());
-                    }
+                    command.Execute(ref __instance, input.Substring(offset == input.Length ? offset : offset + 1), ref node);
+                }
+                catch (Exception e)
+                {
+                    node = ScriptableObject.CreateInstance<TerminalNode>();
+                    node.displayText = "An error occurred executing the command: '" + commandId + "'\n\n>";
+                    node.clearPreviousText = true;
+                    node.terminalEvent = "";
+                    node.playSyncedClip = terminalSyncedSounds["error"];
+                    Instance.Logger.LogError("An error occurred executing the command: '" + commandId + "'\n" + e.ToString());
                 }
 
                 __result = node;
                 return false;
+            }
+
+            [HarmonyPatch("ParsePlayerSentence")]
+            [HarmonyPostfix]
+            [HarmonyPriority(-2147483648)]
+            public static void PostParsePlayerSentence(ref Terminal __instance, ref TerminalNode __result)
+            {
+                if (DisableNewTerminalOS.Value)
+                {
+                    return;
+                }
+
+                if (!__result.clearPreviousText)
+                {
+                    __instance.screenText.text = "\n" + __instance.screenText.text.TrimStart('\n');
+                }
+
+                __result.maxCharactersToType = 99999;
+                __result.displayText = __result.displayText.TrimStart('\n');
+
+                if (__result.displayText == ">")
+                {
+                    return;
+                }
+
+                if (__result.displayText == "")
+                {
+                    __result.displayText = ">";
+                    return;
+                }
+
+                if (!__result.displayText.EndsWith(">"))
+                {
+                    __result.displayText = __result.displayText.TrimEnd('\n') + "\n\n>";
+                }
             }
 
             [HarmonyPatch("TextPostProcess")]
@@ -1037,6 +1087,26 @@ namespace lammOS
             }
         }
 
+        [HarmonyPatch(typeof(HUDManager))]
+        public static class HUDManagerEvents
+        {
+            [HarmonyPatch("SetClock")]
+            [HarmonyPostfix]
+            [HarmonyPriority(-2147483648)]
+            public static void SetClock(ref HUDManager __instance)
+            {
+                ClockText.text = __instance.clockNumber.text.Replace("\n", " ");
+            }
+
+            [HarmonyPatch("FillEndGameStats")]
+            [HarmonyPostfix]
+            [HarmonyPriority(-2147483648)]
+            public static void FillEndGameStats()
+            {
+                ClockText.text = "";
+            }
+        }
+
         public class HelpCommand : Command
         {
             public HelpCommand()
@@ -1047,20 +1117,54 @@ namespace lammOS
                 args = "(Command)";
             }
 
+            public void GenerateHelpPage(ref TerminalNode node)
+            {
+                foreach (string commandId in Instance.GetCommandIds())
+                {
+                    Command command = Instance.GetCommand(commandId);
+                    if (command.hidden)
+                    {
+                        continue;
+                    }
+
+                    node.displayText += ">" + commandId.ToUpper();
+                    if (command.args != "")
+                    {
+                        node.displayText += " " + command.args;
+                    }
+                    node.displayText += "\n";
+                }
+            }
+
+            public void GenerateCommandHelp(string commandId, Command command, ref TerminalNode node)
+            {
+                List<string> shortcuts = new List<string>();
+                foreach (string shortcut in Instance.GetShortcuts())
+                {
+                    if (Instance.GetCommandIdByShortcut(shortcut) == commandId)
+                    {
+                        shortcuts.Add(">" + shortcut.ToUpper());
+                    }
+                }
+                node.displayText = ">" + commandId.ToUpper();
+
+                if (command.args != "")
+                {
+                    node.displayText += " " + command.args;
+                }
+                if (shortcuts.Count != 0)
+                {
+                    node.displayText += "   (" + string.Join(", ", shortcuts) + ")";
+                }
+
+                node.displayText += "\n* " + command.description;
+            }
+
             public override void Execute(ref Terminal terminal, string input, ref TerminalNode node)
             {
                 if (input == "")
                 {
-                    node.displayText = "";
-                    foreach (string cmdId in Instance.GetCommandIds())
-                    {
-                        Command cmd = Instance.GetCommand(cmdId);
-                        if (!cmd.hidden)
-                        {
-                            node.displayText += ">" + cmdId.ToUpper() + " " + cmd.args + "\n";
-                        }
-                    }
-                    node.displayText = node.displayText.Substring(0, node.displayText.Length - 1);
+                    GenerateHelpPage(ref node);
                     return;
                 }
 
@@ -1072,20 +1176,11 @@ namespace lammOS
                 Command command = Instance.GetCommand(input);
                 if (command == null)
                 {
-                    node.displayText = "No command command found with id: '" + input + "'";
-                    node.playSyncedClip = terminalSyncedSounds["error"];
+                    ErrorResponse("No command command found with id: '" + input + "'", ref node);
                     return;
                 }
 
-                List<string> shortcuts = new List<string>();
-                foreach (string shortcut in Instance.GetShortcuts())
-                {
-                    if (Instance.GetCommandIdByShortcut(shortcut) == input)
-                    {
-                        shortcuts.Add(shortcut);
-                    }
-                }
-                node.displayText = ">" + input.ToUpper() + (command.args == "" ? "" : " " + command.args) + (shortcuts.Count > 0 ? ("   (" + string.Join(", ", shortcuts) + ")") : "") + "\n* " + command.description;
+                GenerateCommandHelp(input, command, ref node);
             }
         }
 
@@ -1097,14 +1192,40 @@ namespace lammOS
                 Instance.AddShortcut("ms", "moons");
             }
 
+            public void GenerateMoonIndex(SelectableLevel level, ref TerminalNode node)
+            {
+                string moonId = level.PlanetName.Substring(level.PlanetName.IndexOf(" ") + 1).ToLower();
+                node.displayText += "\n*";
+                if (ShowMinimumChars.Value)
+                {
+                    node.displayText += " (" + moons[moonId].shortestChars + ")";
+                }
+                node.displayText += level.PlanetName.Substring(level.PlanetName.IndexOf(" "));
+
+                if (level.currentWeather != LevelWeatherType.None)
+                {
+                    node.displayText += " (" + level.currentWeather.ToString() + ")";
+                }
+
+                int cost = moons[moonId].GetNode().itemCost;
+                if (cost != 0)
+                {
+                    node.displayText += "   $" + cost.ToString();
+                }
+            }
+
             public override void Execute(ref Terminal terminal, string input, ref TerminalNode node)
             {
-                node.displayText = "Moons:\n* " + (ShowMinimumChars.Value ? "(" + moons["company"].shortestChars + ") " : "") + "The Company Building (" + Mathf.RoundToInt(StartOfRound.Instance.companyBuyingRate * 100f).ToString() + "%)";
-                foreach (SelectableLevel moon in terminal.moonsCatalogueList)
+                node.displayText = "Moons:\n* ";
+                if (ShowMinimumChars.Value)
                 {
-                    string moonId = moon.PlanetName.Substring(moon.PlanetName.IndexOf(" ") + 1).ToLower();
-                    TerminalNode terminalNode = moons[moonId].GetNode();
-                    node.displayText += "\n*" + (ShowMinimumChars.Value ? " (" + moons[moonId].shortestChars + ")" : "") + moon.PlanetName.Substring(moon.PlanetName.IndexOf(" ")) + (moon.currentWeather != LevelWeatherType.None ? " (" + moon.currentWeather.ToString() + ")" : "") + (terminalNode.itemCost == 0 ? "" : "   $" + terminalNode.itemCost.ToString());
+                    node.displayText += "(" + moons["company"].shortestChars + ") ";
+                }
+                node.displayText += "The Company Building (" + Mathf.RoundToInt(StartOfRound.Instance.companyBuyingRate * 100f).ToString() + "%)";
+
+                foreach (SelectableLevel level in terminal.moonsCatalogueList)
+                {
+                    GenerateMoonIndex(level, ref node);
                 }
             }
         }
@@ -1116,6 +1237,205 @@ namespace lammOS
                 description = "View information about a moon.";
                 Instance.AddShortcut("m", "moon");
                 args = "(Moon)";
+            }
+
+            public void DetailedPercentageOrRarity(int rarity, int totalRarity, ref TerminalNode node)
+            {
+                if (ShowPercentagesOrRarity.Value == "Percentage")
+                {
+                    node.displayText += (rarity * 100 / (float)totalRarity).ToString() + "%";
+                    return;
+                }
+                node.displayText += rarity.ToString() + "/" + totalRarity.ToString();
+            }
+
+            public void DetailedWeather(SelectableLevel level, ref TerminalNode node)
+            {
+                node.displayText += "\n\nTypes of Weather:";
+                foreach (RandomWeatherWithVariables weather in level.randomWeathers)
+                {
+                    if (weather.weatherType == LevelWeatherType.None)
+                    {
+                        continue;
+                    }
+                    node.displayText += "\n* " + weather.weatherType.ToString();
+                }
+            }
+
+            public void DetailedIndoors(SelectableLevel level, ref TerminalNode node)
+            {
+                node.displayText += "\n\nIndoor Size Multiplier: x" + level.factorySizeMultiplier.ToString() + "\n\nIndoor Type Rarities:";
+                if (level.dungeonFlowTypes.Length == 0)
+                {
+                    node.displayText += "\n* 0: ";
+                    DetailedPercentageOrRarity(1, 1, ref node);
+                    return;
+                }
+
+                int dungeonRarity = 0;
+                foreach (IntWithRarity rarity in level.dungeonFlowTypes)
+                {
+                    dungeonRarity += rarity.rarity;
+                }
+                foreach (IntWithRarity rarity in level.dungeonFlowTypes)
+                {
+                    if (rarity.rarity == 0)
+                    {
+                        continue;
+                    }
+                    node.displayText += "\n* " + rarity.id.ToString() + ": ";
+                    DetailedPercentageOrRarity(rarity.rarity, dungeonRarity, ref node);
+                }
+            }
+
+            public void DetailedScrap(SelectableLevel level, ref TerminalNode node)
+            {
+                node.displayText += "\n\nMin/Max Scrap: " + level.minScrap.ToString() + "/" + level.maxScrap.ToString() +
+                    "\nMin/Max Scrap Value: " + level.minTotalScrapValue.ToString() + "/" + level.maxTotalScrapValue.ToString() +
+                    "\n\nSpawnable Scrap:";
+
+                int itemRarity = 0;
+                foreach (SpawnableItemWithRarity item in level.spawnableScrap)
+                {
+                    itemRarity += item.rarity;
+                }
+                foreach (SpawnableItemWithRarity item in level.spawnableScrap)
+                {
+                    if (item.rarity == 0)
+                    {
+                        continue;
+                    }
+                    node.displayText += "\n* " + item.spawnableItem.itemName + "   ";
+                    DetailedPercentageOrRarity(item.rarity, itemRarity, ref node);
+                }
+            }
+
+            public void DetailedEntities(SelectableLevel level, ref TerminalNode node)
+            {
+                node.displayText += "\n\nMax Entity Power:\n* Daytime: " + level.maxDaytimeEnemyPowerCount.ToString() +
+                    "\n* Indoor: " + level.maxEnemyPowerCount.ToString() +
+                    "\n* Outdoor: " + level.maxOutsideEnemyPowerCount.ToString() +
+                    "\n\nDaytime Entities: (Power : Max)";
+
+                if (level.DaytimeEnemies.Count == 0)
+                {
+                    node.displayText += "\nNo daytime entities spawn on this moon.";
+                }
+                else
+                {
+                    int daytimeEntityRarity = 0;
+                    foreach (SpawnableEnemyWithRarity entity in level.DaytimeEnemies)
+                    {
+                        daytimeEntityRarity += entity.rarity;
+                    }
+                    foreach (SpawnableEnemyWithRarity entity in level.DaytimeEnemies)
+                    {
+                        if (entity.rarity == 0)
+                        {
+                            continue;
+                        }
+                        node.displayText += "\n* " + entities[entity.enemyType.enemyName].displayName + " (" + entity.enemyType.PowerLevel + " : " + entity.enemyType.MaxCount + ")   ";
+                        DetailedPercentageOrRarity(entity.rarity, daytimeEntityRarity, ref node);
+                    }
+                }
+
+                node.displayText += "\n\nInside Entities: (Power : Max)";
+                if (level.Enemies.Count == 0)
+                {
+                    node.displayText += "\nNo inside entities spawn on this moon.";
+                }
+                else
+                {
+                    int insideEntityRarity = 0;
+                    foreach (SpawnableEnemyWithRarity entity in level.Enemies)
+                    {
+                        insideEntityRarity += entity.rarity;
+                    }
+                    foreach (SpawnableEnemyWithRarity entity in level.Enemies)
+                    {
+                        if (entity.rarity == 0)
+                        {
+                            continue;
+                        }
+                        node.displayText += "\n* " + entities[entity.enemyType.enemyName].displayName + " (" + entity.enemyType.PowerLevel + " : " + entity.enemyType.MaxCount + ")   ";
+                        DetailedPercentageOrRarity(entity.rarity, insideEntityRarity, ref node);
+                    }
+                }
+
+                node.displayText += "\n\nOutside Entities: (Power : Max)";
+                if (level.Enemies.Count == 0)
+                {
+                    node.displayText += "\nNo outside entities spawn on this moon.";
+                }
+                else
+                {
+                    int outsideEntityRarity = 0;
+                    foreach (SpawnableEnemyWithRarity entity in level.OutsideEnemies)
+                    {
+                        outsideEntityRarity += entity.rarity;
+                    }
+                    foreach (SpawnableEnemyWithRarity entity in level.OutsideEnemies)
+                    {
+                        if (entity.rarity == 0)
+                        {
+                            continue;
+                        }
+                        node.displayText += "\n* " + entities[entity.enemyType.enemyName].displayName + " (" + entity.enemyType.PowerLevel + " : " + entity.enemyType.MaxCount + ")   ";
+                        DetailedPercentageOrRarity(entity.rarity, outsideEntityRarity, ref node);
+                    }
+                }
+            }
+
+            public void DetailedSafety(SelectableLevel level, ref TerminalNode node)
+            {
+                bool indoorsEvaluated = false;
+                bool outdoorsEvaluated = false;
+                for (float i = 0; i < 1; i += 0.05f)
+                {
+                    if (indoorsEvaluated && outdoorsEvaluated)
+                    {
+                        break;
+                    }
+
+                    if (!indoorsEvaluated && level.enemySpawnChanceThroughoutDay.Evaluate(i) > 0)
+                    {
+                        float timeNormalized = (i * 0.75f + 0.25f) * 24;
+                        int hour = Mathf.FloorToInt(timeNormalized);
+                        string minute = Mathf.FloorToInt((timeNormalized - hour) * 60).ToString();
+                        string end = "AM";
+                        if (hour >= 12)
+                        {
+                            hour -= 12;
+                            end = "PM";
+                        }
+                        node.displayText += "\n\nIndoors Safe Until Around: " + hour.ToString() + ":" + (minute.Length == 1 ? "0" : "") + minute + " " + end;
+                        indoorsEvaluated = true;
+                    }
+
+                    if (!outdoorsEvaluated && level.outsideEnemySpawnChanceThroughDay.Evaluate(i) > 0)
+                    {
+                        float timeNormalized = (i * 0.75f + 0.25f) * 24;
+                        int hour = Mathf.FloorToInt(timeNormalized);
+                        string minute = Mathf.FloorToInt((timeNormalized - hour) * 60).ToString();
+                        string end = "AM";
+                        if (hour >= 12)
+                        {
+                            hour -= 12;
+                            end = "PM";
+                        }
+                        node.displayText += "\nOutdoors Safe Until Around: " + hour.ToString() + ":" + (minute.Length == 1 ? "0" : "") + minute + " " + end;
+                        outdoorsEvaluated = true;
+                    }
+                }
+            }
+
+            public void DetailedResult(SelectableLevel level, ref TerminalNode node)
+            {
+                DetailedWeather(level, ref node);
+                DetailedIndoors(level, ref node);
+                DetailedScrap(level, ref node);
+                DetailedEntities(level, ref node);
+                DetailedSafety(level, ref node);
             }
 
             public override void Execute(ref Terminal terminal, string input, ref TerminalNode node)
@@ -1139,143 +1459,30 @@ namespace lammOS
                             break;
                         }
                     }
+
                     if (moon == null)
                     {
-                        node.displayText = "No moon goes by the name: '" + input + "'";
-                        node.playSyncedClip = terminalSyncedSounds["error"];
+                        ErrorResponse("No moon goes by the name: '" + input + "'", ref node);
                         return;
                     }
-                    else if (input.Length < Mathf.Min(CharsToAutocomplete.Value, resultId.Length))
+                    if (CheckNotEnoughChars(input.Length, resultId.Length, ref node))
                     {
-                        node.displayText = "Not enough characters were input to autocomplete a result. The current requirement is " + CharsToAutocomplete.Value.ToString() + " characters.";
-                        node.playSyncedClip = terminalSyncedSounds["error"];
                         return;
                     }
+
                     level = moon.GetMoon();
                 }
-                node.displayText = level.PlanetName.Replace(" ", "-") + (level.currentWeather != LevelWeatherType.None ? " (" + level.currentWeather.ToString() + ")" : "") + "\n\n" + level.LevelDescription;
 
-                if (level.PlanetName == "71 Gordion")
+                node.displayText = level.PlanetName.Replace(" ", "-");
+                if (level.currentWeather != LevelWeatherType.None)
                 {
-                    return;
+                    node.displayText += " (" + level.currentWeather.ToString() + ")";
                 }
+                node.displayText += "\n\n" + level.LevelDescription;
 
-                node.displayText += "\n\nTypes of Weather:";
-                foreach (RandomWeatherWithVariables weather in level.randomWeathers)
+                if (level.PlanetName != "71 Gordion")
                 {
-                    if (weather.weatherType != LevelWeatherType.None)
-                    {
-                        node.displayText += "\n* " + weather.weatherType.ToString();
-                    }
-                }
-
-                node.displayText += "\n\nIndoor Size Multiplier: x" + level.factorySizeMultiplier.ToString() + "\n\nIndoor Type Rarities:";
-                if (level.dungeonFlowTypes.Length == 0)
-                {
-                    node.displayText += "\n* 0: 100%";
-                }
-                else
-                {
-                    int dungeonRarity = 0;
-                    foreach (IntWithRarity rarity in level.dungeonFlowTypes)
-                    {
-                        dungeonRarity += rarity.rarity;
-                    }
-                    foreach (IntWithRarity rarity in level.dungeonFlowTypes)
-                    {
-                        node.displayText += "\n* " + rarity.id.ToString() + ": " + (ShowPercentagesOrRarity.Value == "Percentage" ? (rarity.rarity * 100 / (float)dungeonRarity).ToString() + "%" : rarity.rarity.ToString() + "/" + dungeonRarity.ToString());
-                    }
-                }
-
-                node.displayText += "\n\nMin/Max Scrap: " + level.minScrap.ToString() + "/" + level.maxScrap.ToString() + "\n\nMin/Max Scrap Value: " + level.minTotalScrapValue.ToString() + "/" + level.maxTotalScrapValue.ToString() + "\n\nSpawnable Scrap:";
-                int itemRarity = 0;
-                foreach (SpawnableItemWithRarity item in level.spawnableScrap)
-                {
-                    itemRarity += item.rarity;
-                }
-                foreach (SpawnableItemWithRarity item in level.spawnableScrap)
-                {
-                    if (item.rarity > 0)
-                    {
-                        node.displayText += "\n* " + item.spawnableItem.itemName + "   " + (ShowPercentagesOrRarity.Value == "Percentage" ? (item.rarity * 100 / (float)itemRarity).ToString() + "%": item.rarity.ToString() + "/" + itemRarity.ToString());
-                    }
-                }
-
-                node.displayText += "\n\nMax Entity Power:\n* Daytime: " + level.maxDaytimeEnemyPowerCount.ToString() + "\n* Indoor: " + level.maxEnemyPowerCount.ToString() + "\n* Outdoor: " + level.maxOutsideEnemyPowerCount.ToString() + "\n\nDaytime Entities: (Power : Max)";
-                int daytimeEntityRarity = 0;
-                foreach (SpawnableEnemyWithRarity entity in level.DaytimeEnemies)
-                {
-                    daytimeEntityRarity += entity.rarity;
-                }
-                foreach (SpawnableEnemyWithRarity entity in level.DaytimeEnemies)
-                {
-                    if (entity.rarity > 0)
-                    {
-                        node.displayText += "\n* " + entity.enemyType.enemyName + " (" + entity.enemyType.PowerLevel + " : " + entity.enemyType.MaxCount + ")   " + (ShowPercentagesOrRarity.Value == "Percentage" ? (entity.rarity * 100 / (float)daytimeEntityRarity).ToString() + "%" : entity.rarity.ToString() + "/" + daytimeEntityRarity.ToString());
-                    }
-                }
-
-                node.displayText += "\n\nInside Entities: (Power : Max)";
-                int insideEntityRarity = 0;
-                foreach (SpawnableEnemyWithRarity entity in level.Enemies)
-                {
-                    insideEntityRarity += entity.rarity;
-                }
-                foreach (SpawnableEnemyWithRarity entity in level.Enemies)
-                {
-                    if (entity.rarity > 0)
-                    {
-                        node.displayText += "\n* " + entities[entity.enemyType.enemyName].displayName + " (" + entity.enemyType.PowerLevel + " : " + entity.enemyType.MaxCount + ")   " + (ShowPercentagesOrRarity.Value == "Percentage" ? (entity.rarity * 100 / (float)insideEntityRarity).ToString() + "%" : entity.rarity.ToString() + "/" + insideEntityRarity.ToString());
-                    }
-                }
-
-                node.displayText += "\n\nOutside Entities: (Power : Max)";
-                int outsideEntityRarity = 0;
-                foreach (SpawnableEnemyWithRarity entity in level.OutsideEnemies)
-                {
-                    outsideEntityRarity += entity.rarity;
-                }
-                foreach (SpawnableEnemyWithRarity entity in level.OutsideEnemies)
-                {
-                    if (entity.rarity > 0)
-                    {
-                        node.displayText += "\n* " + entities[entity.enemyType.enemyName].displayName + " (" + entity.enemyType.PowerLevel + " : " + entity.enemyType.MaxCount + ")   " + (ShowPercentagesOrRarity.Value == "Percentage" ? (entity.rarity * 100 / (float)outsideEntityRarity).ToString() + "%" : entity.rarity.ToString() + "/" + outsideEntityRarity.ToString());
-                    }
-                }
-
-                for (float i = 0; i < 1; i += 0.05f)
-                {
-                    if (level.enemySpawnChanceThroughoutDay.Evaluate(i) > 0)
-                    {
-                        float timeNormalized = (i * 0.75f + 0.25f) * 24;
-                        int hour = Mathf.FloorToInt(timeNormalized);
-                        string minute = Mathf.FloorToInt((timeNormalized - hour) * 60).ToString();
-                        string end = "AM";
-                        if(hour >= 12)
-                        {
-                            hour -= 12;
-                            end = "PM";
-                        }
-                        node.displayText += "\n\nIndoors Safe Until Around: " + hour.ToString() + ":" + (minute.Length == 1 ? "0" : "") + minute + " " + end;
-                        break;
-                    }
-                }
-                for (float i = 0; i < 1; i += 0.05f)
-                {
-                    if (level.outsideEnemySpawnChanceThroughDay.Evaluate(i) > 0)
-                    {
-                        float timeNormalized = (i * 0.75f + 0.25f) * 24;
-                        int hour = Mathf.FloorToInt(timeNormalized);
-                        string minute = Mathf.FloorToInt((timeNormalized - hour) * 60).ToString();
-                        string end = "AM";
-                        if (hour >= 12)
-                        {
-                            hour -= 12;
-                            end = "PM";
-                        }
-                        node.displayText += "\nOutdoors Safe Until Around: " + hour.ToString() + ":" + (minute.Length == 1 ? "0" : "") + minute + " " + end;
-                        break;
-                    }
+                    DetailedResult(level, ref node);
                 }
             }
         }
@@ -1291,35 +1498,33 @@ namespace lammOS
 
             public override void Execute(ref Terminal terminal, string input, ref TerminalNode node)
             {
-                StartOfRound startOfRound = FindObjectOfType<StartOfRound>();
                 if (StartOfRound.Instance.isChallengeFile)
                 {
-                    node.displayText = "You cannot route to another moon while on a challenge moon save file.";
-                    node.playSyncedClip = terminalSyncedSounds["error"];
+                    ErrorResponse("You cannot route to another moon while on a challenge moon save file.", ref node);
                     return;
                 }
-                else if (!startOfRound.inShipPhase)
+
+                StartOfRound startOfRound = FindObjectOfType<StartOfRound>();
+                if (!startOfRound.inShipPhase)
                 {
-                    node.displayText = "You are only able to route to a moon while in orbit.";
-                    node.playSyncedClip = terminalSyncedSounds["error"];
+                    ErrorResponse("You are only able to route to a moon while in orbit.", ref node);
                     return;
                 }
-                else if (startOfRound.travellingToNewLevel)
+                if (startOfRound.travellingToNewLevel)
                 {
-                    node.displayText = "You are already travelling elsewhere, please wait.";
-                    node.playSyncedClip = terminalSyncedSounds["error"];
+                    ErrorResponse("You are already travelling elsewhere, please wait.", ref node);
                     return;
                 }
-                else if (terminal.useCreditsCooldown)
+
+                if (terminal.useCreditsCooldown)
                 {
-                    node.displayText = "You're on a credit usage cooldown.";
-                    node.playSyncedClip = terminalSyncedSounds["error"];
+                    ErrorResponse("You're on a credit usage cooldown.", ref node);
                     return;
                 }
-                else if (input == "")
+
+                if (input == "")
                 {
-                    node.displayText = "Please enter a moon to route the autopilot to.";
-                    node.playSyncedClip = terminalSyncedSounds["error"];
+                    ErrorResponse("Please enter a moon to route the autopilot to.", ref node);
                     return;
                 }
 
@@ -1337,28 +1542,23 @@ namespace lammOS
                 }
                 if (moon == null)
                 {
-                    node.displayText = "No moon goes by the name: '" + input + "'";
-                    node.playSyncedClip = terminalSyncedSounds["error"];
+                    ErrorResponse("No moon goes by the name: '" + input + "'", ref node);
                     return;
                 }
-                else if (input.Length < Mathf.Min(CharsToAutocomplete.Value, resultId.Length))
+                if (CheckNotEnoughChars(input.Length, resultId.Length, ref node))
                 {
-                    node.displayText = "Not enough characters were input to autocomplete a result. The current requirement is " + CharsToAutocomplete.Value.ToString() + " characters.";
-                    node.playSyncedClip = terminalSyncedSounds["error"];
                     return;
                 }
 
                 TerminalNode terminalNode = moon.GetNode();
                 if (StartOfRound.Instance.levels[terminalNode.buyRerouteToMoon] == StartOfRound.Instance.currentLevel)
                 {
-                    node.displayText = "You are already at that moon.";
-                    node.playSyncedClip = terminalSyncedSounds["error"];
+                    ErrorResponse("You are already at that moon.", ref node);
                     return;
                 }
                 if (terminal.groupCredits < terminalNode.itemCost)
                 {
-                    node.displayText = "You do not have enough credits to go to that moon.";
-                    node.playSyncedClip = terminalSyncedSounds["error"];
+                    ErrorResponse("You do not have enough credits to go to that moon.", ref node);
                     return;
                 }
 
@@ -1377,20 +1577,29 @@ namespace lammOS
                 Instance.AddShortcut("x", "store");
             }
 
-            public override void Execute(ref Terminal terminal, string input, ref TerminalNode node)
+            public void GeneratePurchaseableItems(ref Terminal terminal, ref TerminalNode node)
             {
                 node.displayText = "Welcome to the Company store!\nUse the BUY command to buy any items listed here:\n------------------------------";
                 foreach (PurchaseableItem purchaseableItem in purchaseableItems.Values)
                 {
                     Item item = purchaseableItem.GetItem(ref terminal);
                     int salePercentage = purchaseableItem.GetSalePercentage(ref terminal);
-                    node.displayText += "\n* " + (ShowMinimumChars.Value ? "(" + purchaseableItem.shortestChars + ") " : "") + item.itemName + "   $" + (item.creditsWorth * salePercentage / 100f).ToString();
+                    node.displayText += "\n* ";
+                    if (ShowMinimumChars.Value)
+                    {
+                        node.displayText += "(" + purchaseableItem.shortestChars + ") ";
+                    }
+
+                    node.displayText += item.itemName + "   $" + (item.creditsWorth * salePercentage / 100f).ToString();
                     if (salePercentage != 100)
                     {
-                        node.displayText += "     -" + (100 - salePercentage).ToString() + "%";
+                        node.displayText += "     " + (100 - salePercentage).ToString() + "% OFF";
                     }
                 }
+            }
 
+            public void GenerateUpgrades(ref TerminalNode node)
+            {
                 List<PurchaseableUnlockable> upgrades = new List<PurchaseableUnlockable>();
                 foreach (PurchaseableUnlockable unlockable in purchaseableUnlockables.Values)
                 {
@@ -1400,31 +1609,56 @@ namespace lammOS
                     }
                 }
                 upgrades.Sort((x, y) => x.GetNode().itemCost - y.GetNode().itemCost);
-                string upgradesText = "\n\nShip Upgrades:\n------------------------------";
-                foreach (PurchaseableUnlockable unlockable in upgrades)
+
+                node.displayText += "\n\nShip Upgrades:\n------------------------------";
+                if (upgrades.Count == 0)
                 {
-                    upgradesText += "\n* " + (ShowMinimumChars.Value ? "(" + unlockable.shortestChars + ") " : "") + unlockable.GetUnlockable().unlockableName + "   $" + unlockable.GetNode().itemCost.ToString();
-                }
-                if (upgradesText == "\n\nShip Upgrades:\n------------------------------")
-                {
-                    upgradesText += "\nAll ship upgrades have been purchased.";
+                    node.displayText += "\nAll ship upgrades have been purchased.";
+                    return;
                 }
 
-                node.displayText += upgradesText + "\n\nShip Decor:\n------------------------------";
-                int availableDecorations = 0;
+                foreach (PurchaseableUnlockable unlockable in upgrades)
+                {
+                    node.displayText += "\n* ";
+                    if (ShowMinimumChars.Value)
+                    {
+                        node.displayText += "(" + unlockable.shortestChars + ") ";
+                    }
+                    node.displayText += unlockable.GetUnlockable().unlockableName + "   $" + unlockable.GetNode().itemCost.ToString();
+                }
+            }
+
+            public void GenerateDecorSelection(ref Terminal terminal, ref TerminalNode node)
+            {
+                node.displayText += "\n\nShip Decor:\n------------------------------";
+                bool decorAvailable = false;
                 foreach (TerminalNode decorNode in terminal.ShipDecorSelection)
                 {
-                    if (!purchaseableUnlockables[decorNode.creatureName.ToLower()].GetUnlockable().hasBeenUnlockedByPlayer && !purchaseableUnlockables[decorNode.creatureName.ToLower()].GetUnlockable().alreadyUnlocked)
+                    PurchaseableUnlockable purchaseableUnlockable = purchaseableUnlockables[decorNode.creatureName.ToLower()];
+                    if (!purchaseableUnlockable.GetUnlockable().hasBeenUnlockedByPlayer && !purchaseableUnlockable.GetUnlockable().alreadyUnlocked)
                     {
-                        node.displayText += "\n* " + (ShowMinimumChars.Value ? "(" + purchaseableUnlockables[decorNode.creatureName.ToLower()].shortestChars + ") " : "") + decorNode.creatureName + "   $" + decorNode.itemCost;
-                        availableDecorations++;
+                        node.displayText += "\n* ";
+                        if (ShowMinimumChars.Value)
+                        {
+                            node.displayText += "(" + purchaseableUnlockable.shortestChars + ") ";
+                        }
+                        node.displayText += decorNode.creatureName + "   $" + decorNode.itemCost;
+
+                        decorAvailable = true;
                     }
                 }
-                if (availableDecorations == 0)
+                if (!decorAvailable)
                 {
                     node.displayText += "\nNo decor items available.";
                     return;
                 }
+            }
+
+            public override void Execute(ref Terminal terminal, string input, ref TerminalNode node)
+            {
+                GeneratePurchaseableItems(ref terminal, ref node);
+                GenerateUpgrades(ref node);
+                GenerateDecorSelection(ref terminal, ref node);
             }
         }
 
@@ -1437,41 +1671,28 @@ namespace lammOS
                 args = "[Item] (Amount)";
             }
 
-            public override void Execute(ref Terminal terminal, string input, ref TerminalNode node)
+            public void ParseInput(string input, out string itemInput, out int amount)
             {
-                if (input == "")
-                {
-                    node.displayText = "Please enter an item to purchase.";
-                    node.playSyncedClip = terminalSyncedSounds["error"];
-                    return;
-                }
-                else if (terminal.useCreditsCooldown)
-                {
-                    node.displayText = "You're on a credit usage cooldown.";
-                    node.playSyncedClip = terminalSyncedSounds["error"];
-                    return;
-                }
-
-                input = input.ToLower();
-                string itemInput;
-                int amount = 1;
                 int split = input.LastIndexOf(' ');
                 if (split == -1)
                 {
                     itemInput = input;
+                    amount = 1;
+                    return;
                 }
-                else
+
+                if (int.TryParse(input.Substring(split + 1), out amount))
                 {
-                    if (int.TryParse(input.Substring(split + 1), out amount))
-                    {
-                        itemInput = input.Substring(0, split);
-                    }
-                    else
-                    {
-                        itemInput = input;
-                        amount = 1;
-                    }
+                    itemInput = input.Substring(0, split);
+                    return;
                 }
+
+                itemInput = input;
+                amount = 1;
+            }
+
+            public void PurchaseItem(string input, string itemInput, int amount, ref Terminal terminal, ref TerminalNode node)
+            {
                 PurchaseableItem purchaseableItem = null;
                 foreach (PurchaseableItem item in purchaseableItems.Values)
                 {
@@ -1483,88 +1704,32 @@ namespace lammOS
                 }
                 if (purchaseableItem == null)
                 {
-                    PurchaseableUnlockable purchaseableUnlockable = null;
-                    foreach (PurchaseableUnlockable unlockable in purchaseableUnlockables.Values)
-                    {
-                        if (unlockable.GetUnlockable().unlockableName.ToLower().StartsWith(input))
-                        {
-                            purchaseableUnlockable = unlockable;
-                            break;
-                        }
-                    }
-                    if (purchaseableUnlockable == null)
-                    {
-                        node.displayText = "No item goes by the name: '" + input + "'";
-                        node.playSyncedClip = terminalSyncedSounds["error"];
-                        return;
-                    }
-                    else if (input.Length < Mathf.Min(CharsToAutocomplete.Value, purchaseableUnlockable.GetUnlockable().unlockableName.Length))
-                    {
-                        node.displayText = "Not enough characters were input to autocomplete a result. The current requirement is " + CharsToAutocomplete.Value.ToString() + " characters.";
-                        node.playSyncedClip = terminalSyncedSounds["error"];
-                        return;
-                    }
-                    else if (!purchaseableUnlockable.GetUnlockable().alwaysInStock && !terminal.ShipDecorSelection.Contains(purchaseableUnlockable.GetUnlockable().shopSelectionNode))
-                    {
-                        node.displayText = "This item is not for sale.";
-                        node.playSyncedClip = terminalSyncedSounds["error"];
-                        return;
-                    }
-                    else if (purchaseableUnlockable.GetUnlockable().hasBeenUnlockedByPlayer || purchaseableUnlockable.GetUnlockable().alreadyUnlocked)
-                    {
-                        node.displayText = "You already have this item.";
-                        node.playSyncedClip = terminalSyncedSounds["error"];
-                        return;
-                    }
-
-                    int cost = purchaseableUnlockable.GetNode().itemCost;
-                    if (terminal.groupCredits < cost)
-                    {
-                        node.displayText = "You do not have enough credits to purchase that.";
-                        node.playSyncedClip = terminalSyncedSounds["error"];
-                        return;
-                    }
-                    else if ((!StartOfRound.Instance.inShipPhase && !StartOfRound.Instance.shipHasLanded) || StartOfRound.Instance.shipAnimator.GetCurrentAnimatorStateInfo(0).tagHash != Animator.StringToHash("ShipIdle"))
-                    {
-                        node.displayText = "You cannot purchase that currently.";
-                        node.playSyncedClip = terminalSyncedSounds["error"];
-                        return;
-                    }
-
-                    terminal.groupCredits = Mathf.Clamp(terminal.groupCredits - cost, 0, 10000000);
-                    HUDManager.Instance.DisplayTip("Tip", "Press B to move and place objects in the ship, E to cancel.", false, true, "LC_MoveObjectsTip");
-                    FindObjectOfType<StartOfRound>().BuyShipUnlockableServerRpc(purchaseableUnlockable.GetNode().shipUnlockableID, terminal.groupCredits);
-                    node.displayText = "Purchased " + purchaseableUnlockable.GetUnlockable().unlockableName + " for $" + cost.ToString() + ".";
-                    node.playSyncedClip = terminalSyncedSounds["buy"];
+                    PurchaseUnlockable(input, ref terminal, ref node);
                     return;
                 }
-                else if (input.Length < Mathf.Min(CharsToAutocomplete.Value, purchaseableItem.GetItem(ref terminal).itemName.Length))
+                if (CheckNotEnoughChars(itemInput.Length, purchaseableItem.GetItem(ref terminal).itemName.Length, ref node))
                 {
-                    node.displayText = "Not enough characters were input to autocomplete a result. The current requirement is " + CharsToAutocomplete.Value.ToString() + " characters.";
-                    node.playSyncedClip = terminalSyncedSounds["error"];
                     return;
                 }
 
-                int totalCost = (int)(purchaseableItem.GetItem(ref terminal).creditsWorth * ((float)purchaseableItem.GetSalePercentage(ref terminal) / 100) * amount);
-                if (terminal.groupCredits < totalCost)
+                int cost = (int)(purchaseableItem.GetItem(ref terminal).creditsWorth * ((float)purchaseableItem.GetSalePercentage(ref terminal) / 100) * amount);
+                if (terminal.groupCredits < cost)
                 {
-                    node.displayText = "You do not have enough credits to purchase that.";
-                    node.playSyncedClip = terminalSyncedSounds["error"];
+                    ErrorResponse("You do not have enough credits to purchase that item.", ref node);
                     return;
                 }
-                else if (amount + terminal.numberOfItemsInDropship > 12)
+                if (amount + terminal.numberOfItemsInDropship > maxDropshipItems)
                 {
-                    node.displayText = "There is not enough space on the dropship for this many items.";
-                    node.playSyncedClip = terminalSyncedSounds["error"];
+                    ErrorResponse("There is not enough space on the dropship for these items, there are currently " + terminal.numberOfItemsInDropship.ToString() + "/" + maxDropshipItems.ToString() + " items en route.", ref node);
                     return;
                 }
 
-                terminal.groupCredits = Mathf.Clamp(terminal.groupCredits - totalCost, 0, 10000000);
+                terminal.groupCredits = Mathf.Clamp(terminal.groupCredits - cost, 0, 10000000);
+                terminal.numberOfItemsInDropship += amount;
                 for (int i = 0; i < amount; i++)
                 {
                     terminal.orderedItemsFromTerminal.Add(purchaseableItem.index);
                 }
-                terminal.numberOfItemsInDropship += amount;
 
                 if (terminal.IsServer)
                 {
@@ -1576,8 +1741,80 @@ namespace lammOS
                     terminal.BuyItemsServerRpc(terminal.orderedItemsFromTerminal.ToArray(), terminal.groupCredits, terminal.numberOfItemsInDropship);
                     terminal.orderedItemsFromTerminal.Clear();
                 }
-                node.displayText = "Purchased " + purchaseableItem.GetItem(ref terminal).itemName + " x" + amount.ToString() + " for $" + totalCost.ToString() + ".";
+
+                node.displayText = "Purchased " + purchaseableItem.GetItem(ref terminal).itemName + " x" + amount.ToString() + " for $" + cost.ToString() + ".";
                 node.playSyncedClip = terminalSyncedSounds["buy"];
+            }
+
+            public void PurchaseUnlockable(string input, ref Terminal terminal, ref TerminalNode node)
+            {
+                PurchaseableUnlockable purchaseableUnlockable = null;
+                foreach (PurchaseableUnlockable unlockable in purchaseableUnlockables.Values)
+                {
+                    if (unlockable.GetUnlockable().unlockableName.ToLower().StartsWith(input))
+                    {
+                        purchaseableUnlockable = unlockable;
+                        break;
+                    }
+                }
+                if (purchaseableUnlockable == null)
+                {
+                    ErrorResponse("No purchaseable item or unlockable goes by the name: '" + input + "'", ref node);
+                    return;
+                }
+                if (CheckNotEnoughChars(input.Length, purchaseableUnlockable.GetUnlockable().unlockableName.Length, ref node))
+                {
+                    return;
+                }
+
+                if (!purchaseableUnlockable.GetUnlockable().alwaysInStock && !terminal.ShipDecorSelection.Contains(purchaseableUnlockable.GetUnlockable().shopSelectionNode))
+                {
+                    ErrorResponse("This unlockable is not for sale.", ref node);
+                    return;
+                }
+                if (purchaseableUnlockable.GetUnlockable().hasBeenUnlockedByPlayer || purchaseableUnlockable.GetUnlockable().alreadyUnlocked)
+                {
+                    ErrorResponse("You already have this unlockable.", ref node);
+                    return;
+                }
+
+                int cost = purchaseableUnlockable.GetNode().itemCost;
+                if (terminal.groupCredits < cost)
+                {
+                    ErrorResponse("You do not have enough credits to purchase that unlockable.", ref node);
+                    return;
+                }
+                if ((!StartOfRound.Instance.inShipPhase && !StartOfRound.Instance.shipHasLanded) || StartOfRound.Instance.shipAnimator.GetCurrentAnimatorStateInfo(0).tagHash != Animator.StringToHash("ShipIdle"))
+                {
+                    ErrorResponse("You cannot purchase that unlockable currently.", ref node);
+                    return;
+                }
+
+                terminal.groupCredits = Mathf.Clamp(terminal.groupCredits - cost, 0, 10000000);
+                HUDManager.Instance.DisplayTip("Tip", "Press B to move and place objects in the ship, E to cancel.", false, true, "LC_MoveObjectsTip");
+                FindObjectOfType<StartOfRound>().BuyShipUnlockableServerRpc(purchaseableUnlockable.GetNode().shipUnlockableID, terminal.groupCredits);
+
+                node.displayText = "Purchased " + purchaseableUnlockable.GetUnlockable().unlockableName + " for $" + cost.ToString() + ".";
+                node.playSyncedClip = terminalSyncedSounds["buy"];
+            }
+
+            public override void Execute(ref Terminal terminal, string input, ref TerminalNode node)
+            {
+                if (input == "")
+                {
+                    ErrorResponse("Please enter an item to purchase.", ref node);
+                    return;
+                }
+                if (terminal.useCreditsCooldown)
+                {
+                    ErrorResponse("You're on a credit usage cooldown.", ref node);
+                    return;
+                }
+
+                input = input.ToLower();
+                ParseInput(input, out string itemInput, out int amount);
+
+                PurchaseItem(input, itemInput, amount, ref terminal, ref node);
             }
         }
 
@@ -1590,60 +1827,88 @@ namespace lammOS
                 args = "(Entity)";
             }
 
+            public void GenerateBestiaryPage(ref Terminal terminal, ref TerminalNode node)
+            {
+                node.displayText = "BESTIARY\n------------------------------";
+                if (terminal.scannedEnemyIDs == null || terminal.scannedEnemyIDs.Count <= 0)
+                {
+                    node.displayText += "\nNo data collected on wildlife.";
+                    return;
+                }
+                foreach (Entity entity in entities.Values)
+                {
+                    TerminalNode entityNode = entity.GetNode(ref terminal);
+                    if (entityNode == null || !terminal.scannedEnemyIDs.Contains(entityNode.creatureFileID))
+                    {
+                        continue;
+                    }
+
+                    node.displayText += "\n* ";
+                    if (terminal.newlyScannedEnemyIDs.Contains(entityNode.creatureFileID))
+                    {
+                        node.displayText += "(!) ";
+                    }
+                    if (ShowMinimumChars.Value)
+                    {
+                        node.displayText += "(" + entity.shortestChars + ") ";
+                    }
+                    node.displayText += entity.displayName;
+                }
+            }
+
+            public void GenerateEntryPage(EnemyType entityType, ref TerminalNode node)
+            {
+                node.displayText = node.displayText.TrimEnd('\n');
+                node.displayText += "\n\nPower: " + entityType.PowerLevel.ToString() +
+                    "\nMax Count: " + entityType.MaxCount.ToString() +
+                    "\nCan Die: " + entityType.canDie.ToString() +
+                    "\nEntity Type: " + (entityType.isDaytimeEnemy ? "Daytime" : (entityType.isOutsideEnemy ? "Outside" : "Inside")) +
+                    "\n\nStunnable: " + entityType.canBeStunned.ToString();
+
+                if (entityType.canBeStunned)
+                {
+                    node.displayText += "\nStun Time Multiplier: " + entityType.stunTimeMultiplier.ToString() + "x";
+                }
+                if (!entityType.isDaytimeEnemy && !entityType.isOutsideEnemy)
+                {
+                    node.displayText += "\n\nDoor Open Speed: " + (1 / entityType.doorSpeedMultiplier).ToString() + "s";
+                }
+            }
+
             public override void Execute(ref Terminal terminal, string input, ref TerminalNode node)
             {
                 if (input == "")
                 {
-                    node.displayText = "BESTIARY\n------------------------------";
-                    if (terminal.scannedEnemyIDs == null || terminal.scannedEnemyIDs.Count <= 0)
-                    {
-                        node.displayText += "\nNo data collected on wildlife.";
-                    }
-                    else
-                    {
-                        foreach (Entity e in entities.Values)
-                        {
-                            TerminalNode n = e.GetNode(ref terminal);
-                            if (n != null && terminal.scannedEnemyIDs.Contains(n.creatureFileID))
-                            {
-                                node.displayText += "\n* " + (terminal.newlyScannedEnemyIDs.Contains(n.creatureFileID) ? "(!) " : "") + (ShowMinimumChars.Value ? "(" + e.shortestChars + ") " : "") + e.displayName;
-                            }
-                        }
-                    }
+                    GenerateBestiaryPage(ref terminal, ref node);
                     return;
                 }
 
                 input = input.ToLower();
-                Entity entity = null;
+                EnemyType entityType = null;
+                TerminalNode entityNode = null;
                 string resultName = null;
-                foreach (Entity e in entities.Values)
+                foreach (Entity entity in entities.Values)
                 {
-                    if (e.entryIndex != -1 && e.displayName.ToLower().StartsWith(input) && terminal.scannedEnemyIDs.Contains(e.GetNode(ref terminal).creatureFileID))
+                    if (entity.entryIndex != -1 && entity.displayName.ToLower().StartsWith(input) && terminal.scannedEnemyIDs.Contains(entity.GetNode(ref terminal).creatureFileID))
                     {
-                        entity = e;
-                        resultName = e.displayName;
+                        entityType = entity.GetEntity();
+                        entityNode = entity.GetNode(ref terminal);
+                        resultName = entity.displayName;
                         break;
                     }
                 }
-                if (entity == null)
+                if (entityType == null)
                 {
-                    node.displayText = "No entity exists with the name: '" + input + "'";
-                    node.playSyncedClip = terminalSyncedSounds["error"];
+                    ErrorResponse("No entity exists with the name: '" + input + "'", ref node);
                     return;
                 }
-                else if (input.Length < Mathf.Min(CharsToAutocomplete.Value, resultName.Length))
+                if (CheckNotEnoughChars(input.Length, resultName.Length, ref node))
                 {
-                    node.displayText = "Not enough characters were input to autocomplete a result. The current requirement is " + CharsToAutocomplete.Value.ToString() + " characters.";
-                    node.playSyncedClip = terminalSyncedSounds["error"];
                     return;
                 }
 
-                TerminalNode terminalNode = entity.GetNode(ref terminal);
-                terminal.newlyScannedEnemyIDs.Remove(terminalNode.creatureFileID);
-                node = terminalNode;
-                node.displayText = node.displayText.TrimEnd('\n');
-                EnemyType type = entity.GetEntity();
-                node.displayText += "\n\nPower: " + type.PowerLevel.ToString() + "\nMax Count: " + type.MaxCount.ToString() + "\nCan Die: " + type.canDie.ToString() + "\nEntity Type: " + (type.isDaytimeEnemy ? "Daytime" : (type.isOutsideEnemy ? "Outside" : "Inside")) + "\n\nStunnable: " + type.canBeStunned.ToString() + (type.canBeStunned ? "\nStun Time Multiplier: " + type.stunTimeMultiplier.ToString() + "x" : "") + (!type.isDaytimeEnemy && !type.isOutsideEnemy ? "\n\nDoor Open Speed: " + (1 / type.doorSpeedMultiplier).ToString() + "s" : "");
+                terminal.newlyScannedEnemyIDs.Remove(entityNode.creatureFileID);
+                GenerateEntryPage(entityType, ref node);
             }
         }
 
@@ -1651,23 +1916,28 @@ namespace lammOS
         {
             public StorageCommand()
             {
-                description = "View items stored away in storage.";
+                description = "View unlockables stored away in storage.";
                 Instance.AddShortcut("st", "storage");
             }
 
             public override void Execute(ref Terminal terminal, string input, ref TerminalNode node)
             {
-                node.displayText = "Use the RETRIEVE command to take items out of storage.\nStored Items:";
+                node.displayText = "Use the RETRIEVE command to take unlockables out of storage.\nStored Unlockables:";
                 foreach (PurchaseableUnlockable unlockable in purchaseableUnlockables.Values)
                 {
                     if (unlockable.GetUnlockable().inStorage)
                     {
-                        node.displayText += "\n* " + (ShowMinimumChars.Value ? "(" + unlockable.shortestChars + ") " : "") + unlockable.GetUnlockable().unlockableName;
+                        node.displayText += "\n* ";
+                        if (ShowMinimumChars.Value)
+                        {
+                            node.displayText += "(" + unlockable.shortestChars + ") ";
+                        }
+                        node.displayText += unlockable.GetUnlockable().unlockableName;
                     }
                 }
-                if (node.displayText == "Use the RETRIEVE command to take items out of storage.\nStored Items:")
+                if (node.displayText == "Use the RETRIEVE command to take unlockables out of storage.\nStored Unlockables:")
                 {
-                    node.displayText += "\nNo items stored. To store an item, press B while looking at it, and then press X to store it.";
+                    node.displayText += "\nThere are no unlockables in storage.";
                 }
             }
         }
@@ -1676,7 +1946,7 @@ namespace lammOS
         {
             public RetrieveCommand()
             {
-                description = "Retrieve an item from storage.";
+                description = "Retrieve an unlockable from storage.";
                 Instance.AddShortcut("re", "retrieve");
                 args = "[Item]";
             }
@@ -1685,8 +1955,7 @@ namespace lammOS
             {
                 if (input == "")
                 {
-                    node.displayText = "Please enter an item to take out of storage.";
-                    node.playSyncedClip = terminalSyncedSounds["error"];
+                    ErrorResponse("Please enter an unlockable to take out of storage.", ref node);
                     return;
                 }
 
@@ -1702,31 +1971,27 @@ namespace lammOS
                 }
                 if (purchaseableUnlockable == null)
                 {
-                    node.displayText = "No item goes by the name: '" + input + "'";
-                    node.playSyncedClip = terminalSyncedSounds["error"];
+                    ErrorResponse("No unlockable goes by the name: '" + input + "'", ref node);
                     return;
                 }
-                else if (input.Length < Mathf.Min(CharsToAutocomplete.Value, purchaseableUnlockable.GetUnlockable().unlockableName.Length))
+                if (CheckNotEnoughChars(input.Length, purchaseableUnlockable.GetUnlockable().unlockableName.Length, ref node))
                 {
-                    node.displayText = "Not enough characters were input to autocomplete a result. The current requirement is " + CharsToAutocomplete.Value.ToString() + " characters.";
-                    node.playSyncedClip = terminalSyncedSounds["error"];
                     return;
                 }
-                else if (!purchaseableUnlockable.GetUnlockable().inStorage)
+
+                if (!purchaseableUnlockable.GetUnlockable().inStorage)
                 {
-                    node.displayText = "That item is not in storage.";
-                    node.playSyncedClip = terminalSyncedSounds["error"];
+                    ErrorResponse("That unlockable is not in storage.", ref node);
                     return;
                 }
-                else if (!purchaseableUnlockable.GetUnlockable().hasBeenUnlockedByPlayer && !purchaseableUnlockable.GetUnlockable().alreadyUnlocked)
+                if (!purchaseableUnlockable.GetUnlockable().hasBeenUnlockedByPlayer && !purchaseableUnlockable.GetUnlockable().alreadyUnlocked)
                 {
-                    node.displayText = "You do not own that item.";
-                    node.playSyncedClip = terminalSyncedSounds["error"];
+                    ErrorResponse("You do not own that unlockable.", ref node);
                     return;
                 }
 
                 FindObjectOfType<StartOfRound>().ReturnUnlockableFromStorageServerRpc(purchaseableUnlockable.GetNode().shipUnlockableID);
-                node.displayText = "Returned item from storage.";
+                node.displayText = "Returned unlockable from storage.";
             }
         }
 
@@ -1749,8 +2014,7 @@ namespace lammOS
                         return;
                     }
                 }
-                node.displayText = "Failed to view monitor.";
-                node.playSyncedClip = terminalSyncedSounds["error"];
+                ErrorResponse("Failed to view monitor.", ref node);
             }
         }
 
@@ -1764,52 +2028,39 @@ namespace lammOS
 
             public override void Execute(ref Terminal terminal, string input, ref TerminalNode node)
             {
-                int shipCount = 0;
-                int shipValue = 0;
-                int outdoorCount = 0;
-                int outdoorValue = 0;
-                string outdoorItems = "";
-                int indoorCount = 0;
-                int indoorValue = 0;
-                string indoorItems = "";
-                int buggedCount = 0;
-                int buggedValue = 0;
-                string buggedItems = "";
+                int shipCount = 0, shipValue = 0, indoorCount = 0, indoorValue = 0, outdoorCount = 0, outdoorValue = 0;
+                string outdoorItems = "", indoorItems = "";
+
                 foreach (GrabbableObject item in FindObjectsOfType<GrabbableObject>())
                 {
                     if (!item.itemProperties.isScrap)
                     {
                         continue;
                     }
+
                     if (item.isInShipRoom)
                     {
                         shipCount++;
                         shipValue += item.scrapValue;
+                        continue;
                     }
-                    else if (!item.isInShipRoom && !item.isInFactory)
-                    {
-                        outdoorCount++;
-                        outdoorValue += item.scrapValue;
-                        outdoorItems += "\n* " + item.itemProperties.itemName + " $" + item.scrapValue.ToString();
-                    }
-                    else if (item.isInFactory)
+
+                    if (item.isInFactory)
                     {
                         indoorCount++;
                         indoorValue += item.scrapValue;
                         indoorItems += "\n* " + item.itemProperties.itemName + " $" + item.scrapValue.ToString();
+                        continue;
                     }
-                    else
-                    {
-                        buggedCount++;
-                        buggedValue += item.scrapValue;
-                        buggedItems += "\n* " + item.itemProperties.itemName + " $" + item.scrapValue.ToString();
-                    }
+
+                    outdoorCount++;
+                    outdoorValue += item.scrapValue;
+                    outdoorItems += "\n* " + item.itemProperties.itemName + " $" + item.scrapValue.ToString();
                 }
-                node.displayText = "Ship: " + shipCount.ToString() + " objects with a value of $" + shipValue.ToString() + "\n\nOutdoors: " + outdoorCount.ToString() + " objects with a value of $" + outdoorValue.ToString() + outdoorItems + "\n\nIndoors: " + indoorCount.ToString() + " objects with a value of $" + indoorValue.ToString() + indoorItems;
-                if (buggedCount != 0)
-                {
-                    node.displayText += "\n\nBugged: " + buggedCount.ToString() + " objects with a value of $" + buggedValue.ToString() + buggedItems;
-                }
+
+                node.displayText = "Ship: " + shipCount.ToString() + " objects with a value of $" + shipValue.ToString() +
+                    "\n\nIndoors: " + indoorCount.ToString() + " objects with a value of $" + indoorValue.ToString() + indoorItems +
+                    "\n\nOutdoors: " + outdoorCount.ToString() + " objects with a value of $" + outdoorValue.ToString() + outdoorItems;
             }
         }
 
@@ -1823,48 +2074,58 @@ namespace lammOS
                 args = "(Log)";
             }
 
+            public void GenerateSigurdPage(ref Terminal terminal, ref TerminalNode node)
+            {
+                node.displayText = "Sigurd's Log Entries\n------------------------------";
+                if (terminal.unlockedStoryLogs == null || terminal.unlockedStoryLogs.Count <= 0)
+                {
+                    node.displayText = "ERROR, DATA HAS BEEN CORRUPTED OR OVERWRITTEN.";
+                    return;
+                }
+
+                foreach (string logId in logs.Keys)
+                {
+                    if (terminal.unlockedStoryLogs.Contains(logs[logId].logIndex))
+                    {
+                        node.displayText += "\n* ";
+                        if (terminal.newlyUnlockedStoryLogs.Contains(logs[logId].logIndex))
+                        {
+                            node.displayText += "(!) ";
+                        }
+                        if (ShowMinimumChars.Value)
+                        {
+                            node.displayText += "(" + logs[logId].shortestChars + ") ";
+                        }
+                        node.displayText += logId;
+                    }
+                }
+            }
+
             public override void Execute(ref Terminal terminal, string input, ref TerminalNode node)
             {
                 if (input == "")
                 {
-                    node.displayText = "SIGURD'S LOG ENTRIES\n------------------------------";
-                    if (terminal.unlockedStoryLogs == null || terminal.unlockedStoryLogs.Count <= 0)
-                    {
-                        node.displayText += "\nALL DATA HAS BEEN CORRUPTED OR OVERWRITTEN";
-                    }
-                    else
-                    {
-                        foreach (string logId in logs.Keys)
-                        {
-                            if (terminal.unlockedStoryLogs.Contains(logs[logId].logIndex))
-                            {
-                                node.displayText += "\n* " + (terminal.newlyUnlockedStoryLogs.Contains(logs[logId].logIndex) ? "(!) " : "") + (ShowMinimumChars.Value ? "(" + logs[logId].shortestChars + ") " : "") + logId;
-                            }
-                        }
-                    }
+                    GenerateSigurdPage(ref terminal, ref node);
                     return;
                 }
 
                 input = input.ToLower();
                 Log log = null;
-                foreach (string l in logs.Keys)
+                foreach (string logId in logs.Keys)
                 {
-                    if (l.ToLower().StartsWith(input) && terminal.unlockedStoryLogs.Contains(logs[l].logIndex))
+                    if (logId.ToLower().StartsWith(input) && terminal.unlockedStoryLogs.Contains(logs[logId].logIndex))
                     {
-                        log = logs[l];
+                        log = logs[logId];
                         break;
                     }
                 }
                 if (log == null)
                 {
-                    node.displayText = "No log exists with the name: '" + input + "'";
-                    node.playSyncedClip = terminalSyncedSounds["error"];
+                    ErrorResponse("No log exists with the name: '" + input + "'", ref node);
                     return;
                 }
-                else if (input.Length < Mathf.Min(CharsToAutocomplete.Value, log.GetNode(ref terminal).creatureName.Length))
+                if (CheckNotEnoughChars(input.Length, log.GetNode(ref terminal).creatureName.Length, ref node))
                 {
-                    node.displayText = "Not enough characters were input to autocomplete a result. The current requirement is " + CharsToAutocomplete.Value.ToString() + " characters.";
-                    node.playSyncedClip = terminalSyncedSounds["error"];
                     return;
                 }
 
@@ -1886,6 +2147,10 @@ namespace lammOS
                 node.displayText = "Radar Targets:";
                 for (int i = 0; i < StartOfRound.Instance.mapScreen.radarTargets.Count; i++)
                 {
+                    if (StartOfRound.Instance.mapScreen.radarTargets[i].name.StartsWith("Player #"))
+                    {
+                        continue;
+                    }
                     node.displayText += "\n* " + StartOfRound.Instance.mapScreen.radarTargets[i].name;
                 }
             }
@@ -1919,14 +2184,11 @@ namespace lammOS
                 }
                 if (target == -1)
                 {
-                    node.displayText = "No player or radar booster goes by the name: '" + input + "'";
-                    node.playSyncedClip = terminalSyncedSounds["error"];
+                    ErrorResponse("No radar target goes by the name: '" + input + "'", ref node);
                     return;
                 }
-                else if (input.Length < Mathf.Min(CharsToAutocomplete.Value, StartOfRound.Instance.mapScreen.radarTargets[target].name.Length))
+                if (CheckNotEnoughChars(input.Length, StartOfRound.Instance.mapScreen.radarTargets[target].name.Length, ref node))
                 {
-                    node.displayText = "Not enough characters were input to autocomplete a result. The current requirement is " + CharsToAutocomplete.Value.ToString() + " characters.";
-                    node.playSyncedClip = terminalSyncedSounds["error"];
                     return;
                 }
 
@@ -1947,17 +2209,15 @@ namespace lammOS
             {
                 if (input == "")
                 {
-                    if (StartOfRound.Instance.mapScreen.radarTargets[StartOfRound.Instance.mapScreen.targetTransformIndex].isNonPlayer)
+                    if (!StartOfRound.Instance.mapScreen.radarTargets[StartOfRound.Instance.mapScreen.targetTransformIndex].isNonPlayer)
                     {
-                        StartOfRound.Instance.mapScreen.PingRadarBooster(StartOfRound.Instance.mapScreen.targetTransformIndex);
+                        ErrorResponse("You can only ping radar boosters.", ref node);
+                        return;
                     }
-                    else
-                    {
-                        node.displayText = "You can only ping radar boosters.";
-                        node.playSyncedClip = terminalSyncedSounds["error"];
-                    }
+                    StartOfRound.Instance.mapScreen.PingRadarBooster(StartOfRound.Instance.mapScreen.targetTransformIndex);
                     return;
                 }
+
                 input = input.ToLower();
                 int target = -1;
                 for (int i = 0; i < StartOfRound.Instance.mapScreen.radarTargets.Count; i++)
@@ -1970,25 +2230,20 @@ namespace lammOS
                 }
                 if (target == -1)
                 {
-                    node.displayText = "No radar booster goes by the name: '" + input + "'";
-                    node.playSyncedClip = terminalSyncedSounds["error"];
+                    ErrorResponse("No radar booster goes by the name: '" + input + "'", ref node);
                     return;
                 }
-                else if (input.Length < Mathf.Min(CharsToAutocomplete.Value, StartOfRound.Instance.mapScreen.radarTargets[target].name.Length))
+                if (CheckNotEnoughChars(input.Length, StartOfRound.Instance.mapScreen.radarTargets[target].name.Length, ref node))
                 {
-                    node.displayText = "Not enough characters were input to autocomplete a result. The current requirement is " + CharsToAutocomplete.Value.ToString() + " characters.";
-                    node.playSyncedClip = terminalSyncedSounds["error"];
                     return;
                 }
-                else if (StartOfRound.Instance.mapScreen.radarTargets[target].isNonPlayer)
+
+                if (!StartOfRound.Instance.mapScreen.radarTargets[target].isNonPlayer)
                 {
-                    StartOfRound.Instance.mapScreen.PingRadarBooster(target);
+                    ErrorResponse("You can only ping radar boosters.", ref node);
+                    return;
                 }
-                else
-                {
-                    node.displayText = "You can only ping radar boosters.";
-                    node.playSyncedClip = terminalSyncedSounds["error"];
-                }
+                StartOfRound.Instance.mapScreen.PingRadarBooster(target);
             }
         }
 
@@ -2005,17 +2260,15 @@ namespace lammOS
             {
                 if (input == "")
                 {
-                    if (StartOfRound.Instance.mapScreen.radarTargets[StartOfRound.Instance.mapScreen.targetTransformIndex].isNonPlayer)
+                    if (!StartOfRound.Instance.mapScreen.radarTargets[StartOfRound.Instance.mapScreen.targetTransformIndex].isNonPlayer)
                     {
-                        StartOfRound.Instance.mapScreen.FlashRadarBooster(StartOfRound.Instance.mapScreen.targetTransformIndex);
+                        ErrorResponse("You can only flash radar boosters.", ref node);
+                        return;
                     }
-                    else
-                    {
-                        node.displayText = "You can only flash radar boosters.";
-                        node.playSyncedClip = terminalSyncedSounds["error"];
-                    }
+                    StartOfRound.Instance.mapScreen.FlashRadarBooster(StartOfRound.Instance.mapScreen.targetTransformIndex);
                     return;
                 }
+
                 input = input.ToLower();
                 int target = -1;
                 for (int i = 0; i < StartOfRound.Instance.mapScreen.radarTargets.Count; i++)
@@ -2028,25 +2281,20 @@ namespace lammOS
                 }
                 if (target == -1)
                 {
-                    node.displayText = "No radar booster goes by the name: '" + input + "'";
-                    node.playSyncedClip = terminalSyncedSounds["error"];
+                    ErrorResponse("No radar booster goes by the name: '" + input + "'", ref node);
                     return;
                 }
-                else if (input.Length < Mathf.Min(CharsToAutocomplete.Value, StartOfRound.Instance.mapScreen.radarTargets[target].name.Length))
+                if (CheckNotEnoughChars(input.Length, StartOfRound.Instance.mapScreen.radarTargets[target].name.Length, ref node))
                 {
-                    node.displayText = "Not enough characters were input to autocomplete a result. The current requirement is " + CharsToAutocomplete.Value.ToString() + " characters.";
-                    node.playSyncedClip = terminalSyncedSounds["error"];
                     return;
                 }
-                else if (StartOfRound.Instance.mapScreen.radarTargets[target].isNonPlayer)
+
+                if (!StartOfRound.Instance.mapScreen.radarTargets[target].isNonPlayer)
                 {
-                    StartOfRound.Instance.mapScreen.FlashRadarBooster(target);
+                    ErrorResponse("You can only flash radar boosters.", ref node);
+                    return;
                 }
-                else
-                {
-                    node.displayText = "You can only flash radar boosters.";
-                    node.playSyncedClip = terminalSyncedSounds["error"];
-                }
+                StartOfRound.Instance.mapScreen.FlashRadarBooster(target);
             }
         }
 
@@ -2064,22 +2312,19 @@ namespace lammOS
                 SignalTranslator signalTranslator = FindObjectOfType<SignalTranslator>();
                 if (signalTranslator == null)
                 {
-                    node.displayText = "You do not own a signal translator.";
-                    node.playSyncedClip = terminalSyncedSounds["error"];
+                    ErrorResponse("You do not own a signal translator.", ref node);
                     return;
                 }
-                else if (Time.realtimeSinceStartup - signalTranslator.timeLastUsingSignalTranslator <= 8f)
+                if (Time.realtimeSinceStartup - signalTranslator.timeLastUsingSignalTranslator <= 8f)
                 {
-                    node.displayText = "The signal translator is still in use.";
-                    node.playSyncedClip = terminalSyncedSounds["error"];
+                    ErrorResponse("The signal translator is still in use.", ref node);
                     return;
                 }
 
                 string text = input.Substring(0, Mathf.Min(input.Length, 9));
                 if (string.IsNullOrEmpty(text))
                 {
-                    node.displayText = "Please enter a 9 character or less message to send.";
-                    node.playSyncedClip = terminalSyncedSounds["error"];
+                    ErrorResponse("Please enter a 9 character or less message to send.", ref node);
                     return;
                 }
 
@@ -2101,13 +2346,23 @@ namespace lammOS
 
             public override void Execute(ref Terminal terminal, string input, ref TerminalNode node)
             {
-                if (!StartOfRound.Instance.isChallengeFile && StartOfRound.Instance.inShipPhase && !StartOfRound.Instance.firingPlayersCutsceneRunning)
-		        {
-                    StartOfRound.Instance.ManuallyEjectPlayersServerRpc();
+                if (StartOfRound.Instance.isChallengeFile)
+                {
+                    ErrorResponse("You are unable to be ejected on challenge moons.", ref node);
                     return;
                 }
-                node.displayText = "Unable to eject at this moment.";
-                node.playSyncedClip = terminalSyncedSounds["error"];
+                if (!StartOfRound.Instance.inShipPhase)
+		        {
+                    ErrorResponse("You must be in orbit to be ejected.", ref node);
+                    return;
+                }
+                if (StartOfRound.Instance.firingPlayersCutsceneRunning)
+                {
+                    ErrorResponse("Your crew is already being ejected.", ref node);
+                    return;
+                }
+
+                StartOfRound.Instance.ManuallyEjectPlayersServerRpc();
             }
         }
 
@@ -2138,8 +2393,20 @@ namespace lammOS
                 node.displayText = "Alphanumeric Codes:";
                 foreach (TerminalAccessibleObject tao in FindObjectsOfType<TerminalAccessibleObject>())
                 {
-                    node.displayText += "\n* " + tao.objectCode + ": " + (tao.isBigDoor ? "Door" : (tao.codeAccessCooldownTimer == 3.2f ? "Landmine" : "Turret"));
+                    node.displayText += "\n* " + tao.objectCode + ": ";
+                    if (tao.isBigDoor)
+                    {
+                        node.displayText += "Door";
+                        continue;
+                    }
+                    if (tao.codeAccessCooldownTimer == 3.2f)
+                    {
+                        node.displayText += "Landmine";
+                        continue;
+                    }
+                    node.displayText += "Turret";
                 }
+
                 if (node.displayText == "Alphanumeric Codes:")
                 {
                     node.displayText += "\nThere are no alphanumeric codes.";
@@ -2186,20 +2453,23 @@ namespace lammOS
             {
                 foreach (ShipTeleporter teleporter in FindObjectsOfType<ShipTeleporter>())
                 {
-                    if (!teleporter.isInverseTeleporter && teleporter.IsSpawned && teleporter.isActiveAndEnabled)
+                    if (!teleporter.isInverseTeleporter)
                     {
-                        if (!teleporter.buttonTrigger.interactable)
+                        if (teleporter.IsSpawned && teleporter.isActiveAndEnabled)
                         {
-                            teleporter.PressTeleportButtonOnLocalClient();
+                            if (teleporter.buttonTrigger.interactable)
+                            {
+                                teleporter.PressTeleportButtonOnLocalClient();
+                                return;
+                            }
+                            ErrorResponse("The teleporter is on cooldown.", ref node);
                             return;
                         }
-                        node.displayText = "The teleporter is on cooldown.";
-                        node.playSyncedClip = terminalSyncedSounds["error"];
+                        ErrorResponse("The teleporter is in storage.", ref node);
                         return;
                     }
                 }
-                node.displayText = "You do not own a teleporter.";
-                node.playSyncedClip = terminalSyncedSounds["error"];
+                ErrorResponse("You do not own a teleporter.", ref node);
             }
         }
 
@@ -2214,20 +2484,23 @@ namespace lammOS
             {
                 foreach (ShipTeleporter teleporter in FindObjectsOfType<ShipTeleporter>())
                 {
-                    if (teleporter.isInverseTeleporter && teleporter.IsSpawned && teleporter.isActiveAndEnabled)
+                    if (teleporter.isInverseTeleporter)
                     {
-                        if (teleporter.buttonTrigger.interactable)
+                        if (teleporter.IsSpawned && teleporter.isActiveAndEnabled)
                         {
-                            teleporter.PressTeleportButtonOnLocalClient();
+                            if (teleporter.buttonTrigger.interactable)
+                            {
+                                teleporter.PressTeleportButtonOnLocalClient();
+                                return;
+                            }
+                            ErrorResponse("The inverse teleporter is on cooldown.", ref node);
                             return;
                         }
-                        node.displayText = "The inverse teleporter is on cooldown.";
-                        node.playSyncedClip = terminalSyncedSounds["error"];
+                        ErrorResponse("The inverse teleporter is in storage.", ref node);
                         return;
                     }
                 }
-                node.displayText = "You do not own an inverse teleporter.";
-                node.playSyncedClip = terminalSyncedSounds["error"];
+                ErrorResponse("You do not own an inverse teleporter.", ref node);
             }
         }
 
@@ -2277,10 +2550,12 @@ namespace lammOS
                     setupNodeIndex = -1;
 
                     terminal.terminalNodes.specialNodes[startupNodeIndex].displayText = oldStartupText;
+                    terminal.terminalNodes.specialNodes[startupNodeIndex].maxCharactersToType = 35;
                     oldStartupText = "";
                     startupNodeIndex = -1;
 
                     terminal.terminalNodes.specialNodes[helpNodeIndex].displayText = oldHelpText;
+                    terminal.terminalNodes.specialNodes[helpNodeIndex].maxCharactersToType = 35;
                     oldHelpText = "";
                     helpNodeIndex = -1;
 
@@ -2358,22 +2633,21 @@ namespace lammOS
                         if (args == "")
                         {
                             Instance.Logger.LogInfo("Synced Audios: " + terminal.syncedAudios.Length.ToString());
+                            break;
                         }
-                        else
+
+                        int.TryParse(args, out index);
+                        if (index < 0)
                         {
-                            int.TryParse(args, out index);
-                            if (index < 0)
-                            {
-                                Instance.Logger.LogInfo("Index must be greater than 0.");
-                                return;
-                            }
-                            else if (index >= terminal.syncedAudios.Length)
-                            {
-                                Instance.Logger.LogInfo("Index is greater than " + terminal.syncedAudios.Length.ToString() + ".");
-                                return;
-                            }
-                            terminal.PlayTerminalAudioServerRpc(index);
+                            Instance.Logger.LogInfo("Index must be greater than 0.");
+                            break;
                         }
+                        if (index >= terminal.syncedAudios.Length)
+                        {
+                            Instance.Logger.LogInfo("Index is greater than " + terminal.syncedAudios.Length.ToString() + ".");
+                            break;
+                        }
+                        terminal.PlayTerminalAudioServerRpc(index);
                         break;
                     }
                     case "money":
@@ -2389,7 +2663,7 @@ namespace lammOS
                             if (money < 0)
                             {
                                 Instance.Logger.LogInfo("Money must be greater than 0.");
-                                return;
+                                break;
                             }
                         }
                         terminal.useCreditsCooldown = true;
@@ -2594,6 +2868,22 @@ namespace lammOS
             public string description = "";
             public string args = "";
             public bool hidden = false;
+
+            public void ErrorResponse(string response, ref TerminalNode node)
+            {
+                node.displayText = response;
+                node.playSyncedClip = terminalSyncedSounds["error"];
+            }
+
+            public bool CheckNotEnoughChars(int inputLength, int resultLength, ref TerminalNode node)
+            {
+                if (inputLength < Mathf.Min(CharsToAutocomplete.Value, resultLength))
+                {
+                    ErrorResponse("Not enough characters were input to autocomplete a result. The current requirement is " + CharsToAutocomplete.Value.ToString() + " characters.", ref node);
+                    return true;
+                }
+                return false;
+            }
 
             public abstract void Execute(ref Terminal terminal, string input, ref TerminalNode node);
         }
