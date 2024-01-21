@@ -42,22 +42,39 @@ I also pre-patched the Terminal.TextPostProcess method to do nothing by default,
     - Entity invulnerability
 	- Entity power and the max that can exist
 	- Ect.
+- An clock in the top right corner of the terminal, optional with a config option.
+- A synced config to allow you to change the maximum amount of items on the delivery dropship, as well as change the prices for every moon, item, and unlockable.
 
 ## What's Planned
 - Showing the entity's base health when viewing one using the `>BESTIARY` command.
 - Fixing the possibility of any desyncing or inconsistencies occuring caused by other mods, so that the `>RELOAD` command doesn't need to be used.
 - The ability to create saveable macros and run them, which would execute a series of commands you tell it to.
+- Sorting commands into categories, mainly for how they show up when using the `>HELP` command, either based on function or by mod that adds them.
+- Potentially adding back purchase and routing confirmation screens as a config option.
 - Implementing command history using the up and down arrow keys. Like [Terminal_History by NotAtomicBomb](https://thunderstore.io/c/lethal-company/p/NotAtomicBomb/Terminal_History/)
-- Switching between players and radar boosters using the left and right arrow keys. Like [FastSwitchPlayerViewInRadar by kRYstall9](https://thunderstore.io/c/lethal-company/p/kRYstall9/FastSwitchPlayerViewInRadar/)
+- Switching between radar targets using the left and right arrow keys. Like [FastSwitchPlayerViewInRadar by kRYstall9](https://thunderstore.io/c/lethal-company/p/kRYstall9/FastSwitchPlayerViewInRadar/)
 - Being able to use a walkie talkie while on the terminal. Like [TermSpeak by KodiCraft](https://thunderstore.io/c/lethal-company/p/KodiCraft/TermSpeak/)
 
 ## Known Incompatibilities
-- None currently. 
+- [Advanced Company by PotatoePet](https://thunderstore.io/c/lethal-company/p/PotatoePet/AdvancedCompany/)
+  - Price changes don't sync, this has to do with how Advanced Company saves these changes, not making it possible for me to access them.
+    - The creator of the mod has plans to make an api that will allow me and other mod creators to get and modify these prices.
 
 ## Contact
 - @lammas123 on Discord - [Lethal Company Modding Discord](https://discord.com/invite/lcmod) - [lammOS Thread](https://discord.com/channels/1168655651455639582/1196941743673847938)
 
 # Changelog
+## 1.1.0
+- Fixed a bug with loading all entities into the entity dictionary the bestiary would use when any mod added additional entities.
+- Fixed an incompatibility with [Lethal Things by Evasia](https://thunderstore.io/c/lethal-company/p/Evaisa/LethalThings/) where some of their decor items would cause an error to be thrown when entering the `>STORE` command.
+- Made lots of changes to the publicity of methods and properties in the mod.
+- Removed the DisableNewTerminal config option, not sure why I added it initially as it just adds more complexity.
+- Made lots of little changes to several commands to make them more consistent with each other.
+- Added a new Synced config, along with the new config option MaxDropshipItems.
+- Added a synced price multiplier config option for every moon, item, and unlockable, including ones added by mods to the Synced config. This works as a workaround for price changes from [Advanced Company by PotatoePet](https://thunderstore.io/c/lethal-company/p/PotatoePet/AdvancedCompany/) not being retrievable.
+  - When joining another server with this mod, your synced config options will sync with the host if they have the mod, otherwise all prices will be set to their default values (so you can't cheat).
+  - When joining a host who has the mod while you do not, you'll be able to use and buy things on the terminal as normal, but the host will check to make sure any purchases you make were actually possible according to their config and sync any changes they need to make regarding your purchase accordingly (also so you can't cheat or accidentally break something).
+
 ## 1.0.1
 - Switched from using the Terminal.Awake method to the Terminal.Start method, for better compatibility with other mods. Namely [Lategame Upgrades by malco](https://thunderstore.io/c/lethal-company/p/malco/Lategame_Upgrades/), as it would add information to the help node after I would change it and make the resulting node's result look strange.
 - Moved appending `\n\n>` to the end of nodes to a post Terminal.ParsePlayerSentence method, so that the text is added to the end of other mod's nodes, making responses slightly more consistent everywhere.
