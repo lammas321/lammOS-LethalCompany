@@ -14,7 +14,7 @@ using UnityEngine;
 
 namespace lammOS
 {
-    [BepInPlugin("lammas123.lammOS", "lammOS", "1.1.1")]
+    [BepInPlugin("lammas123.lammOS", "lammOS", "1.1.2")]
     public class lammOS : BaseUnityPlugin
     {
         public static Dictionary<string, TerminalKeyword> terminalKeywords;
@@ -34,7 +34,7 @@ namespace lammOS
         public static List<TerminalNode> entriesWithoutEntity;
         public static Dictionary<string, Log> logs;
 
-        public static bool addedCodeCommands { get; internal set; } = false;
+        public static bool setup { get; internal set; } = false;
 
         internal static ConfigEntry<bool> ShowTerminalClock;
         internal static ConfigEntry<bool> ShowMinimumChars;
@@ -49,9 +49,10 @@ namespace lammOS
         internal static new ManualLogSource Logger;
         internal static new ConfigFile Config;
 
-        internal static Terminal Terminal;
-
         internal static readonly string newStartupText = "Powered by lammOS     Created by lammas123\n          Courtesy of the Company\n\nType HELP for a list of available commands.\n\n>";
+        internal static string currentLoadedNode = "";
+        internal static string startupNodeText = "";
+        internal static string helpNodeText = "";
 
         internal static GameObject Clock;
         internal static TextMeshProUGUI ClockText => Clock.GetComponent<TextMeshProUGUI>();
@@ -195,15 +196,16 @@ namespace lammOS
         public static int GetItemCost(string itemId)
         {
             float multiplier = SyncedConfig.Instance.ItemPriceMultipliers.TryGetValue(itemId, out float value) ? value : -1f;
+            Terminal terminal = FindObjectOfType<Terminal>();
             if (multiplier == -1)
             {
-                return purchaseableItems[itemId].GetItem(ref Terminal).creditsWorth;
+                return purchaseableItems[itemId].GetItem(ref terminal).creditsWorth;
             }
-            if (purchaseableItems[itemId].GetItem(ref Terminal).creditsWorth == 0)
+            if (purchaseableItems[itemId].GetItem(ref terminal).creditsWorth == 0)
             {
                 return (int)multiplier;
             }
-            return (int)(purchaseableItems[itemId].GetItem(ref Terminal).creditsWorth * multiplier);
+            return (int)(purchaseableItems[itemId].GetItem(ref terminal).creditsWorth * multiplier);
         }
         public static int GetUnlockableCost(string unlockableId)
         {
@@ -833,7 +835,7 @@ namespace lammOS
                             bool foundMatch = false;
                             for (int i = 0; i < entriesWithoutEntity.Count; i++)
                             {
-                                if (entriesWithoutEntity[i].creatureName.ToLower().StartsWith(entity.enemyName.ToLower()))
+                                if (entriesWithoutEntity[i].creatureName.ToLower().Replace(" ", "").Replace("-", "").StartsWith(entity.enemyName.ToLower().Replace(" ", "").Replace("-", "")))
                                 {
                                     entities.Add(entity.enemyName, new Entity(ref entity, entriesWithoutEntity[i].creatureFileID, ref terminal));
                                     entitiesWithoutEntry.RemoveAt(entityIndex);
@@ -961,41 +963,6 @@ namespace lammOS
             SyncConfigValues();
         }
 
-        internal void ReplaceDefaultScreens(ref Terminal terminal)
-        {
-            bool replacedSetup = false;
-            bool replacedStartup = false;
-            bool replacedHelp = false;
-            for (int i = 0; i < terminal.terminalNodes.specialNodes.Count; i++)
-            {
-                if (replacedSetup && replacedStartup && replacedHelp)
-                {
-                    break;
-                }
-
-                if (terminal.terminalNodes.specialNodes[i].displayText.StartsWith("BG IG, A System-Act Ally"))
-                {
-                    terminal.terminalNodes.specialNodes[i].displayText = terminal.terminalNodes.specialNodes[i].displayText.Replace("Halden Electronics Inc.", "lammas123").Replace("FORTUNE-9", "lammOS");
-                    if (terminal.terminalNodes.specialNodes[i].terminalOptions[0].result.terminalOptions[0].result.displayText.IndexOf("Welcome to the FORTUNE-9 OS") != -1)
-                    {
-                        terminal.terminalNodes.specialNodes[i].terminalOptions[0].result.terminalOptions[0].result.displayText = terminal.terminalNodes.specialNodes[i].terminalOptions[0].result.terminalOptions[0].result.displayText.Substring(0, terminal.terminalNodes.specialNodes[i].terminalOptions[0].result.terminalOptions[0].result.displayText.IndexOf("Welcome to the FORTUNE-9 OS")) + newStartupText;
-                    }
-                    replacedSetup = true;
-                }
-                else if (terminal.terminalNodes.specialNodes[i].displayText.StartsWith("Welcome to the FORTUNE-9 OS"))
-                {
-                    terminal.terminalNodes.specialNodes[i].displayText = newStartupText;
-                    terminal.terminalNodes.specialNodes[i].maxCharactersToType = 99999;
-                    replacedStartup = true;
-                }
-                else if (terminal.terminalNodes.specialNodes[i].displayText.StartsWith(">MOONS\n"))
-                {
-                    terminal.terminalNodes.specialNodes[i].displayText = newStartupText;
-                    terminal.terminalNodes.specialNodes[i].maxCharactersToType = 99999;
-                    replacedHelp = true;
-                }
-            }
-        }
         internal void SetupClock(ref Terminal terminal)
         {
             Transform terminalMainContainer = terminal.transform.parent.parent.Find("Canvas").Find("MainContainer");
@@ -1024,26 +991,32 @@ namespace lammOS
                 }
             }
         }
+        internal void ReplaceDefaultScreen(ref Terminal terminal)
+        {
+            TerminalNode node = terminal.terminalNodes.specialNodes[0];
+            node.displayText = node.displayText.Replace("Halden Electronics Inc.", "lammas123").Replace("FORTUNE-9", "lammOS");
+
+            TerminalNode resultNode = node.terminalOptions[0].result.terminalOptions[0].result;
+            resultNode.displayText = resultNode.displayText.Substring(0, resultNode.displayText.IndexOf("Welcome to the FORTUNE-9 OS")) + newStartupText;
+        }
 
         [HarmonyPatch(typeof(Terminal))]
-        public static partial class TerminalEvents
+        public static partial class TerminalPatches
         {
             [HarmonyPatch("Start")]
             [HarmonyPostfix]
             [HarmonyPriority(-2147483648)]
             public static void PostStart(ref Terminal __instance)
             {
-                Terminal = __instance;
-
                 Instance.LoadVariables(ref __instance);
 
-                Instance.ReplaceDefaultScreens(ref __instance);
                 Instance.SetupClock(ref __instance);
 
-                if (!addedCodeCommands)
+                if (!setup)
                 {
                     Instance.AddCodeCommands();
-                    addedCodeCommands = true;
+                    Instance.ReplaceDefaultScreen(ref __instance);
+                    setup = true;
                 }
 
                 SyncedConfig.Setup();
@@ -1175,6 +1148,44 @@ namespace lammOS
                 return true;
             }
 
+            [HarmonyPatch("LoadNewNode")]
+            [HarmonyPrefix]
+            [HarmonyPriority(2147483647)]
+            public static void PreLoadNewNode(ref Terminal __instance, ref TerminalNode node)
+            {
+                if (node.displayText.StartsWith("Welcome to the FORTUNE-9 OS"))
+                {
+                    startupNodeText = node.displayText;
+                    node.displayText = newStartupText;
+                    node.maxCharactersToType = 99999;
+                    currentLoadedNode = "startup";
+                }
+                else if (node.displayText.StartsWith(">MOONS\n"))
+                {
+                    helpNodeText = node.displayText;
+                    node.displayText = newStartupText;
+                    node.maxCharactersToType = 99999;
+                    currentLoadedNode = "help";
+                }
+            }
+
+            [HarmonyPatch("LoadNewNode")]
+            [HarmonyPostfix]
+            [HarmonyPriority(-2147483648)]
+            public static void PostLoadNewNode(ref Terminal __instance, ref TerminalNode node)
+            {
+                if (currentLoadedNode == "startup")
+                {
+                    node.displayText = startupNodeText;
+                    startupNodeText = "";
+                }
+                else if (currentLoadedNode == "help")
+                {
+                    node.displayText = helpNodeText;
+                    helpNodeText = "";
+                }
+            }
+
             [HarmonyPatch("TextPostProcess")]
             [HarmonyPrefix]
             [HarmonyPriority(2147483647)]
@@ -1190,7 +1201,7 @@ namespace lammOS
         }
 
         [HarmonyPatch(typeof(StartOfRound))]
-        public static partial class StartOfRoundEvents
+        public static partial class StartOfRoundPatches
         {
             [HarmonyPatch("ChangeLevelServerRpc")]
             [HarmonyPrefix]
@@ -1216,18 +1227,20 @@ namespace lammOS
                     return true;
                 }
 
+                Terminal terminal = FindObjectOfType<Terminal>();
                 int cost = GetMoonCost(moonId);
-                if (Terminal.groupCredits - cost != newGroupCreditsAmount)
+                if (terminal.groupCredits - cost != newGroupCreditsAmount)
                 {
                     Logger.LogWarning("Routing to moon was bought by a client for an incorrect price");
-                    if (Terminal.groupCredits - cost < 0)
+
+                    if (terminal.groupCredits - cost < 0)
                     {
                         Logger.LogWarning("Resulting credits of routing is negative, canceling purchase");
-                        Terminal.SyncGroupCreditsServerRpc(Terminal.groupCredits, Terminal.numberOfItemsInDropship);
+                        terminal.SyncGroupCreditsServerRpc(terminal.groupCredits, terminal.numberOfItemsInDropship);
                         return false;
                     }
                     Logger.LogWarning("Resulting credits of routing is positive, fix and sync credits but allow purchase");
-                    newGroupCreditsAmount = Mathf.Clamp(Terminal.groupCredits - cost, 0, 10000000);
+                    newGroupCreditsAmount = Mathf.Clamp(terminal.groupCredits - cost, 0, 10000000);
                 }
 
                 return true;
@@ -1257,18 +1270,19 @@ namespace lammOS
                     return true;
                 }
 
+                Terminal terminal = FindObjectOfType<Terminal>();
                 int cost = GetUnlockableCost(unlockableId);
-                if (Terminal.groupCredits - cost != newGroupCreditsAmount)
+                if (terminal.groupCredits - cost != newGroupCreditsAmount)
                 {
                     Logger.LogWarning("Unlockable bought by a client for an incorrect price");
-                    if (Terminal.groupCredits - cost < 0)
+                    if (terminal.groupCredits - cost < 0)
                     {
                         Logger.LogWarning("Resulting credits of purchase is negative, canceling purchase");
-                        Terminal.SyncGroupCreditsServerRpc(Terminal.groupCredits, Terminal.numberOfItemsInDropship);
+                        terminal.SyncGroupCreditsServerRpc(terminal.groupCredits, terminal.numberOfItemsInDropship);
                         return false;
                     }
                     Logger.LogWarning("Resulting credits of purchase is positive, fix and sync credits but allow purchase");
-                    newGroupCreditsAmount = Mathf.Clamp(Terminal.groupCredits - cost, 0, 10000000);
+                    newGroupCreditsAmount = Mathf.Clamp(terminal.groupCredits - cost, 0, 10000000);
                 }
 
                 return true;
@@ -1276,7 +1290,7 @@ namespace lammOS
         }
 
         [HarmonyPatch(typeof(HUDManager))]
-        public static class HUDManagerEvents
+        public static class HUDManagerPatches
         {
             [HarmonyPatch("SetClock")]
             [HarmonyPostfix]
@@ -3155,7 +3169,8 @@ namespace lammOS
 
                 foreach (string itemId in purchaseableItems.Keys)
                 {
-                    ConfigEntry<float> priceMultiplier = Config.Bind("Synced - Item Price Multipliers", itemId + "_PriceMultiplier", purchaseableItems[itemId].GetItem(ref Terminal).creditsWorth == 0 ? 0f : 1f);
+                    Terminal terminal = FindObjectOfType<Terminal>();
+                    ConfigEntry<float> priceMultiplier = Config.Bind("Synced - Item Price Multipliers", itemId + "_PriceMultiplier", purchaseableItems[itemId].GetItem(ref terminal).creditsWorth == 0 ? 0f : 1f);
                     Instance.ItemPriceMultipliers.Add(itemId, priceMultiplier.Value >= 0 ? priceMultiplier.Value : 0);
                 }
 
