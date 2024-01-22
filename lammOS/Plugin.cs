@@ -14,7 +14,7 @@ using UnityEngine;
 
 namespace lammOS
 {
-    [BepInPlugin("lammas123.lammOS", "lammOS", "1.1.0")]
+    [BepInPlugin("lammas123.lammOS", "lammOS", "1.1.1")]
     public class lammOS : BaseUnityPlugin
     {
         public static Dictionary<string, TerminalKeyword> terminalKeywords;
@@ -1219,7 +1219,7 @@ namespace lammOS
                 int cost = GetMoonCost(moonId);
                 if (Terminal.groupCredits - cost != newGroupCreditsAmount)
                 {
-                    Logger.LogWarning("Routing to moon was bought by a client for and incorrect price");
+                    Logger.LogWarning("Routing to moon was bought by a client for an incorrect price");
                     if (Terminal.groupCredits - cost < 0)
                     {
                         Logger.LogWarning("Resulting credits of routing is negative, canceling purchase");
@@ -1787,9 +1787,16 @@ namespace lammOS
                     return;
                 }
 
-                terminal.groupCredits = Mathf.Clamp(terminal.groupCredits - cost, 0, 10000000);
                 terminal.useCreditsCooldown = true;
-                startOfRound.ChangeLevelServerRpc(terminalNode.buyRerouteToMoon, terminal.groupCredits);
+                if (terminal.IsHost)
+                {
+                    startOfRound.ChangeLevelServerRpc(terminalNode.buyRerouteToMoon, terminal.groupCredits - cost);
+                }
+                else
+                {
+                    terminal.groupCredits -= cost;
+                    startOfRound.ChangeLevelServerRpc(terminalNode.buyRerouteToMoon, terminal.groupCredits);
+                }
                 node.displayText = "Routing autopilot to " + moon.GetMoon().PlanetName + ".";
             }
         }
@@ -1935,8 +1942,14 @@ namespace lammOS
                     return;
                 }
 
+                if (amount < 1)
+                {
+                    ErrorResponse("You must buy at least 1 item when purchasing items.", ref node);
+                    return;
+                }
+
                 int cost = GetItemCost(purchaseableItem.GetItem(ref terminal).itemName.ToLower());
-                if (terminal.groupCredits < cost)
+                if (terminal.groupCredits < cost * amount)
                 {
                     ErrorResponse("You do not have enough credits to purchase that item.", ref node);
                     return;
@@ -1947,11 +1960,17 @@ namespace lammOS
                     return;
                 }
 
-                terminal.groupCredits = Mathf.Clamp(terminal.groupCredits - cost, 0, 10000000);
-                terminal.numberOfItemsInDropship += amount;
                 for (int i = 0; i < amount; i++)
                 {
                     terminal.orderedItemsFromTerminal.Add(purchaseableItem.index);
+                    terminal.numberOfItemsInDropship++;
+                    terminal.groupCredits = Mathf.Clamp(terminal.groupCredits - cost, 0, 10000000);
+
+                    if (!terminal.IsHost && terminal.orderedItemsFromTerminal.Count == 12)
+                    {
+                        terminal.BuyItemsServerRpc(terminal.orderedItemsFromTerminal.ToArray(), terminal.groupCredits, terminal.numberOfItemsInDropship);
+                        terminal.orderedItemsFromTerminal.Clear();
+                    }
                 }
 
                 if (terminal.IsServer)
@@ -1961,11 +1980,14 @@ namespace lammOS
                 else
                 {
                     terminal.useCreditsCooldown = true;
-                    terminal.BuyItemsServerRpc(terminal.orderedItemsFromTerminal.ToArray(), terminal.groupCredits, terminal.numberOfItemsInDropship);
-                    terminal.orderedItemsFromTerminal.Clear();
+                    if (terminal.orderedItemsFromTerminal.Count > 1)
+                    {
+                        terminal.BuyItemsServerRpc(terminal.orderedItemsFromTerminal.ToArray(), terminal.groupCredits, terminal.numberOfItemsInDropship);
+                        terminal.orderedItemsFromTerminal.Clear();
+                    }
                 }
 
-                node.displayText = "Purchased " + purchaseableItem.GetItem(ref terminal).itemName + " x" + amount.ToString() + " for $" + cost.ToString() + ".";
+                node.displayText = "Purchased " + purchaseableItem.GetItem(ref terminal).itemName + " x" + amount.ToString() + " for $" + (cost * amount).ToString() + ".";
                 node.playSyncedClip = terminalSyncedSounds["buy"];
             }
             public void PurchaseUnlockable(string input, ref Terminal terminal, ref TerminalNode node)
@@ -2012,10 +2034,17 @@ namespace lammOS
                     return;
                 }
 
-                terminal.groupCredits = Mathf.Clamp(terminal.groupCredits - cost, 0, 10000000);
                 HUDManager.Instance.DisplayTip("Tip", "Press B to move and place objects in the ship, E to cancel.", false, true, "LC_MoveObjectsTip");
-                FindObjectOfType<StartOfRound>().BuyShipUnlockableServerRpc(purchaseableUnlockable.GetNode().shipUnlockableID, terminal.groupCredits);
-
+                if (terminal.IsHost)
+                {
+                    FindObjectOfType<StartOfRound>().BuyShipUnlockableServerRpc(purchaseableUnlockable.GetNode().shipUnlockableID, terminal.groupCredits - cost);
+                }
+                else
+                {
+                    terminal.groupCredits = Mathf.Clamp(terminal.groupCredits - cost, 0, 10000000);
+                    FindObjectOfType<StartOfRound>().BuyShipUnlockableServerRpc(purchaseableUnlockable.GetNode().shipUnlockableID, terminal.groupCredits);
+                }
+                
                 node.displayText = "Purchased " + purchaseableUnlockable.GetNode().creatureName + " for $" + cost.ToString() + ".";
                 node.playSyncedClip = terminalSyncedSounds["buy"];
             }
