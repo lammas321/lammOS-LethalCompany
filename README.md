@@ -46,11 +46,11 @@ I also pre-patched the Terminal.TextPostProcess method to do nothing by default,
 - A synced config to allow you to change the maximum amount of items on the delivery dropship, as well as change the prices for every moon, item, and unlockable.
 
 ## What's Planned
-- Showing the entity's base health when viewing one using the `>BESTIARY` command.
-- Fixing the possibility of any desyncing or inconsistencies occuring caused by other mods, so that the `>RELOAD` command doesn't need to be used.
-- The ability to create saveable macros and run them, which would execute a series of commands you tell it to.
 - Sorting commands into categories, mainly for how they show up when using the `>HELP` command, either based on function or by mod that adds them.
-- Potentially adding back purchase and routing confirmation screens as a config option.
+- The ability to create saveable macros and run them, which would execute a series of commands you tell it to.
+- Adding back purchase and routing confirmation screens as a config option.
+- Fixing the possibility of any desyncing or inconsistencies occuring caused by other mods, so that the `>RELOAD` command doesn't need to be used.
+- Showing the entity's base health when viewing one using the `>BESTIARY` command.
 - Implementing command history using the up and down arrow keys. Like [Terminal_History by NotAtomicBomb](https://thunderstore.io/c/lethal-company/p/NotAtomicBomb/Terminal_History/)
 - Switching between radar targets using the left and right arrow keys. Like [FastSwitchPlayerViewInRadar by kRYstall9](https://thunderstore.io/c/lethal-company/p/kRYstall9/FastSwitchPlayerViewInRadar/)
 - Being able to use a walkie talkie while on the terminal. Like [TermSpeak by KodiCraft](https://thunderstore.io/c/lethal-company/p/KodiCraft/TermSpeak/)
@@ -64,6 +64,11 @@ I also pre-patched the Terminal.TextPostProcess method to do nothing by default,
 - @lammas123 on Discord - [Lethal Company Modding Discord](https://discord.com/invite/lcmod) - [lammOS Thread](https://discord.com/channels/1168655651455639582/1196941743673847938)
 
 # Changelog
+## 1.1.2
+- Fixed an incompatibility with [Lategame Upgrades by malco](https://thunderstore.io/c/lethal-company/p/malco/Lategame_Upgrades/) and other mods that modified the help node's results, making lammOS' replacement of it more mod friendly, as it was causing Lategame Upgrades to throw errors.
+  - This incompatibility in particular caused quite a few problems for lammOS, as Lategame Upgrades throwing this error would cause a slight desync from the Terminal for lammOS. This lead to the case where routing to a paid moon would attempt to use the Terminal from the first lobby the host created, but never any lobby after that until they restarted their game.
+- Made adding entities to the list of entities viewable with the `>BESTIARY` command more broad, as it would add the Rolling Giant from the [RollingGiant mod by NomnomAB](https://thunderstore.io/c/lethal-company/p/NomnomAB/RollingGiant/). 
+
 ## 1.1.1
 - Fixed a bug that would occur when buying more than 12 items at a time as a client where your purchase wouldn't register but the group credits would be deducted only for you. You would then no longer be able to purchase anything for being on a permanent group credit usage cooldown until someone else did, which would then also fix your desynced group credits.
 - Fixed routing to other moons or buying unlockables taking your group credits if purchased as the host. Doing so would either take double the group credits taken if you had the funds, or take only the normal amount but not route you to the moon or unlock the unlockable.
