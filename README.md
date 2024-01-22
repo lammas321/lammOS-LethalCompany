@@ -64,6 +64,10 @@ I also pre-patched the Terminal.TextPostProcess method to do nothing by default,
 - @lammas123 on Discord - [Lethal Company Modding Discord](https://discord.com/invite/lcmod) - [lammOS Thread](https://discord.com/channels/1168655651455639582/1196941743673847938)
 
 # Changelog
+## 1.1.1
+- Fixed a bug that would occur when buying more than 12 items at a time as a client where your purchase wouldn't register but the group credits would be deducted only for you. You would then no longer be able to purchase anything for being on a permanent group credit usage cooldown until someone else did, which would then also fix your desynced group credits.
+- Fixed routing to other moons or buying unlockables taking your group credits if purchased as the host. Doing so would either take double the group credits taken if you had the funds, or take only the normal amount but not route you to the moon or unlock the unlockable.
+
 ## 1.1.0
 - Fixed a bug with loading all entities into the entity dictionary the bestiary would use when any mod added additional entities.
 - Fixed an incompatibility with [Lethal Things by Evasia](https://thunderstore.io/c/lethal-company/p/Evaisa/LethalThings/) where some of their decor items would cause an error to be thrown when entering the `>STORE` command.
