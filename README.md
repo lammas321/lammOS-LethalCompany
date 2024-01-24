@@ -14,19 +14,19 @@ I also pre-patched the Terminal.TextPostProcess method to do nothing by default,
 - All responses from commands will be formatted to end with a `>` with an empty line between the previous text and the `>`, to ensure command responses have some level of consistency. 
 - You now don't need to enter at least three characters for the terminal to understand what you were trying to buy or view, you only need to type the first character, or however many you set for the CharsToAutocomplete config option, but keep in mind it will pick the first thing it finds that matches the first couple character(s) you enter and assume that's what you wanted.
   - Setting the CharsToAutocomplete config option to a value above the character length of certain options will require you to type the full name of the option.
-- The `>HELP` command now lists all of the available commands and the arguments they take in, and giving it the name of another command as a parameter will give you more information about it.
+- The `>HELP` command now lists all of the available commands and the arguments they take in, and giving it the name of another command as a argument will give you more information about it.
+  - All commands are given a "category", and those commands will be shown in categories when using the `>HELP` command with no arguments.
 - Most commands now have shortcuts, for example:
   - `>MOON` -> `>M`
   - `>PING` -> `>P`
   - `>TRANSMIT` -> `>T`
 - Commands like `>MOON` and `>BESTIARY` will show even more details about the moon or entity you are curious about.
 - The `>STORE` command will hide upgrades and other decorative items that have already been purchased.
-- Using commands like `>ROUTE` and `>BUY` will not ask for confirmation if you'd like to go to another moon or if you'd like to purchase something.
-  - To make this less problematic, you can either type most of an items name to be sure what you're typing in, or use the ShowMinimumChars config option to see the minimum characters you need to enter for the terminal to autocomplete any of the options in commands like `>MOONS` and `>STORE`.
+- There's a config option to have commands like `>ROUTE` and `>BUY` not ask for confirmation before doing something.
 - The `>SCAN` command now shows three categories for scanned items: in the ship, inside the building, and outside, as well as what items are at these locations and their values.
   - As of v49, joining lobbies will show any scrap in the ship as being inside the building until they are picked up and dropped, this does not occur if you are the host.
 - The `>VIEW MONITOR` command has been simplified to `>MONITOR`, or simply `>V` with the command's shortcut, and the monitor now shows up instantly rather than slowly loading after entering the command.
-- The `>SWITCH` command will switch to the next radar target if entered with no parameters, as if you pushed the white button on the monitor, and the `>PING` and `>FLASH` commands will now act on the radar booster currently being viewed if entered with no parameters.
+- The `>SWITCH` command will switch to the next radar target if entered with no arguments, as if you pushed the white button on the monitor, and the `>PING` and `>FLASH` commands will now act on the radar booster currently being viewed if entered with no arguments.
 - Along with many other small changes to vanilla commands, such as how they work to make them easier to use, and how their responses will look to clean some of the unnecessary text.
 
 ## What's Added
@@ -42,17 +42,16 @@ I also pre-patched the Terminal.TextPostProcess method to do nothing by default,
     - Entity invulnerability
 	- Entity power and the max that can exist
 	- Ect.
-- An clock in the top right corner of the terminal, optional with a config option.
+- A clock in the top right corner of the terminal, optional with a config option.
+- Using the left and right arrow keys while on the terminal will make you switch between radar targets on the ships monitor.
+- Using the up and down arrow keys will let you go through your command history to run commands again or correct typos without having to retype the full command.
+- You can create and run macros that'll run a set of commands you give it, great for setting up a "kit" macro so that you can buy a lot of things you normally do quickly.
+  - If you have command confirmations on, you'll also have to have the macro confirm the action with a second command. Just entering `C` will make it so the command is confirmed if that config option is enabled, and it will "clear the terminal" if it isn't enabled as `C` is a shortcut for `>CLR`. Great to remember if you want to share your macros with others and want them to work universally.
 - A synced config to allow you to change the maximum amount of items on the delivery dropship, as well as change the prices for every moon, item, and unlockable.
 
 ## What's Planned
-- Sorting commands into categories, mainly for how they show up when using the `>HELP` command, either based on function or by mod that adds them.
-- The ability to create saveable macros and run them, which would execute a series of commands you tell it to.
-- Adding back purchase and routing confirmation screens as a config option.
 - Fixing the possibility of any desyncing or inconsistencies occuring caused by other mods, so that the `>RELOAD` command doesn't need to be used.
 - Showing the entity's base health when viewing one using the `>BESTIARY` command.
-- Implementing command history using the up and down arrow keys. Like [Terminal_History by NotAtomicBomb](https://thunderstore.io/c/lethal-company/p/NotAtomicBomb/Terminal_History/)
-- Switching between radar targets using the left and right arrow keys. Like [FastSwitchPlayerViewInRadar by kRYstall9](https://thunderstore.io/c/lethal-company/p/kRYstall9/FastSwitchPlayerViewInRadar/)
 - Being able to use a walkie talkie while on the terminal. Like [TermSpeak by KodiCraft](https://thunderstore.io/c/lethal-company/p/KodiCraft/TermSpeak/)
 
 ## Known Incompatibilities
@@ -64,10 +63,22 @@ I also pre-patched the Terminal.TextPostProcess method to do nothing by default,
 - @lammas123 on Discord - [Lethal Company Modding Discord](https://discord.com/invite/lcmod) - [lammOS Thread](https://discord.com/channels/1168655651455639582/1196941743673847938)
 
 # Changelog
+## 1.2.0
+- Added a command category feature, which sorts terminal commands into categories (based on what it does or what mod added it) in the `>HELP` command's response.
+- Slightly modified how commands are added/registered with the mod, as well as how commands are handled.
+- Added some command compatibility with the [Lategame Upgrades mod by malco](https://thunderstore.io/c/lethal-company/p/malco/Lategame_Upgrades/), by giving it it's own help page category if you have the mod enabled. These are purely visual, the commands are still parsed by Lategame Upgrades.
+- Added functionality for confirmation screens after entering commands like `>BUY` and `>ROUTE`, as well as a config option to make them optional.
+  - The confirmation screens will be enabled by default, you'll have to disable them through the config once you run the mod if you liked how commands didn't ask for confirmation before.
+- Added the ability to create saveable macros and run them with several macro based commands, which when ran execute a series of instructions you tell it to.
+  - These are saved in the file "lammas123.lammOS.Macros.es3" in BepInEx's config folder, making them shareable but sending this file to others. Alternatively you could share the command you used to create the macro and have them copy and paste it.
+- Implemented between radar targets using the left and right arrow keys while on the terminal, like the [FastSwitchPlayerViewInRadar mod by kRYstall9](https://thunderstore.io/c/lethal-company/p/kRYstall9/FastSwitchPlayerViewInRadar/).
+- Implemented a command history using the up and down arrow keys, like the [Terminal_History mod by NotAtomicBomb](https://thunderstore.io/c/lethal-company/p/NotAtomicBomb/Terminal_History/). The maximum amount of commands to save to the history configurable with the MaxCommandHistory config option.
+  - The keybinds for switching between radar targets and shifting through command history are configurable within the game's keybind settings menu with the use of the [LethalCompany_InputUtils mod by Rune5680](https://thunderstore.io/c/lethal-company/p/Rune580/LethalCompany_InputUtils/).
+
 ## 1.1.2
 - Fixed an incompatibility with [Lategame Upgrades by malco](https://thunderstore.io/c/lethal-company/p/malco/Lategame_Upgrades/) and other mods that modified the help node's results, making lammOS' replacement of it more mod friendly, as it was causing Lategame Upgrades to throw errors.
   - This incompatibility in particular caused quite a few problems for lammOS, as Lategame Upgrades throwing this error would cause a slight desync from the Terminal for lammOS. This lead to the case where routing to a paid moon would attempt to use the Terminal from the first lobby the host created, but never any lobby after that until they restarted their game.
-- Made adding entities to the list of entities viewable with the `>BESTIARY` command more broad, as it would add the Rolling Giant from the [RollingGiant mod by NomnomAB](https://thunderstore.io/c/lethal-company/p/NomnomAB/RollingGiant/). 
+- Made adding entities to the list of entities viewable with the `>BESTIARY` command more broad, as it wouldn't add the Rolling Giant from the [RollingGiant mod by NomnomAB](https://thunderstore.io/c/lethal-company/p/NomnomAB/RollingGiant/). 
 
 ## 1.1.1
 - Fixed a bug that would occur when buying more than 12 items at a time as a client where your purchase wouldn't register but the group credits would be deducted only for you. You would then no longer be able to purchase anything for being on a permanent group credit usage cooldown until someone else did, which would then also fix your desynced group credits.
