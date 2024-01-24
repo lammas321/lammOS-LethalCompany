@@ -1,7 +1,9 @@
 ﻿using BepInEx;
 using BepInEx.Configuration;
 using BepInEx.Logging;
+using GameNetcodeStuff;
 using HarmonyLib;
+using LethalCompanyInputUtils.Api;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -11,10 +13,12 @@ using TMPro;
 using Unity.Collections;
 using Unity.Netcode;
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 namespace lammOS
 {
-    [BepInPlugin("lammas123.lammOS", "lammOS", "1.1.2")]
+    [BepInPlugin("lammas123.lammOS", "lammOS", "1.2.0")]
+    [BepInDependency("com.rune580.LethalCompanyInputUtils", MinimumDependencyVersion: "0.6.0")]
     public class lammOS : BaseUnityPlugin
     {
         public static Dictionary<string, TerminalKeyword> terminalKeywords;
@@ -34,13 +38,24 @@ namespace lammOS
         public static List<TerminalNode> entriesWithoutEntity;
         public static Dictionary<string, Log> logs;
 
-        public static bool setup { get; internal set; } = false;
+        public static bool isSetup { get; internal set; } = false;
+        public static Command currentCommand { get; internal set; } = null;
+        public static bool runningMacro { get; internal set; } = false;
 
         internal static ConfigEntry<bool> ShowTerminalClock;
+        public static bool ShowTerminalClockValue { get; internal set; }
         internal static ConfigEntry<bool> ShowMinimumChars;
+        public static bool ShowMinimumCharsValue { get; internal set; }
         internal static ConfigEntry<int> CharsToAutocomplete;
+        public static int CharsToAutocompleteValue { get; internal set; }
+        internal static ConfigEntry<bool> ShowCommandConfirmations;
+        public static bool ShowCommandConfirmationsValue { get; internal set; }
+        internal static ConfigEntry<int> MaxCommandHistory;
+        public static int MaxCommandHistoryValue { get; internal set; }
         internal static ConfigEntry<string> ShowPercentagesOrRarity;
+        public static string ShowPercentagesOrRarityValue { get; internal set; }
         internal static ConfigEntry<bool> DisableTextPostProcessMethod;
+        public static bool DisableTextPostProcessMethodValue { get; internal set; }
 
         internal static Dictionary<string, Command> commands;
         internal static Dictionary<string, string> shortcuts;
@@ -48,6 +63,10 @@ namespace lammOS
         internal static lammOS Instance;
         internal static new ManualLogSource Logger;
         internal static new ConfigFile Config;
+
+        internal static List<string> commandHistory = new();
+        internal static int commandHistoryIndex = -1;
+        internal static string lastTypedCommand = "";
 
         internal static readonly string newStartupText = "Powered by lammOS     Created by lammas123\n          Courtesy of the Company\n\nType HELP for a list of available commands.\n\n>";
         internal static string currentLoadedNode = "";
@@ -61,52 +80,73 @@ namespace lammOS
         {
             Instance = this;
             Logger = BepInEx.Logging.Logger.CreateLogSource("lammOS");
-            Config = new(Utility.CombinePaths(Paths.ConfigPath, "lammas123.lammOS" + ".cfg"), false, MetadataHelper.GetMetadata(this));
+            Config = new(Utility.CombinePaths(Paths.ConfigPath, "lammas123.lammOS.cfg"), false, MetadataHelper.GetMetadata(this));
             new SyncedConfig();
 
             commands = new();
             shortcuts = new();
 
-            AddCommand("help", new HelpCommand());
-            AddCommand("moons", new MoonsCommand());
-            AddCommand("moon", new MoonCommand());
-            AddCommand("route", new RouteCommand());
-            AddCommand("store", new StoreCommand());
-            AddCommand("buy", new BuyCommand());
-            AddCommand("bestiary", new BestiaryCommand());
-            AddCommand("storage", new StorageCommand());
-            AddCommand("retrieve", new RetrieveCommand());
-            AddCommand("monitor", new MonitorCommand());
-            AddCommand("scan", new ScanCommand());
-            AddCommand("sigurd", new SigurdCommand());
-            AddCommand("targets", new TargetsCommand());
-            AddCommand("switch", new SwitchCommand());
-            AddCommand("ping", new PingCommand());
-            AddCommand("flash", new FlashCommand());
-            AddCommand("transmit", new TransmitCommand());
-            AddCommand("eject", new EjectCommand());
-            AddCommand("clr", new ClearCommand());
-            AddCommand("codes", new CodesCommand());
-            AddCommand("door", new DoorCommand());
-            AddCommand("lights", new LightsCommand());
-            AddCommand("tp", new TeleporterCommand());
-            AddCommand("itp", new InverseTeleporterCommand());
-            AddCommand("shortcuts", new ShortcutsCommand());
-            AddCommand("reload", new ReloadCommand());
-            AddCommand("debug", new DebugCommand());
+            AddCommand(new HelpCommand());
+            AddCommand(new ShortcutsCommand());
 
+            AddCommand(new MoonsCommand());
+            AddCommand(new MoonCommand());
+            AddCommand(new RouteCommand());
+
+            AddCommand(new StoreCommand());
+            AddCommand(new BuyCommand());
+            AddCommand(new StorageCommand());
+            AddCommand(new RetrieveCommand());
+
+            AddCommand(new BestiaryCommand());
+            AddCommand(new SigurdCommand());
+
+            AddCommand(new MonitorCommand());
+            AddCommand(new TargetsCommand());
+            AddCommand(new SwitchCommand());
+            AddCommand(new PingCommand());
+            AddCommand(new FlashCommand());
+
+            AddCommand(new DoorCommand());
+            AddCommand(new LightsCommand());
+            AddCommand(new TeleporterCommand());
+            AddCommand(new InverseTeleporterCommand());
+
+            AddCommand(new ScanCommand());
+            AddCommand(new TransmitCommand());
+            AddCommand(new ClearCommand());
+            AddCommand(new CodesCommand());
+            AddCommand(new ReloadCommand());
+            AddCommand(new EjectCommand());
+
+            AddCommand(new MacrosCommand());
+            AddCommand(new RunMacroCommand());
+            AddCommand(new CreateMacroCommand());
+            AddCommand(new InfoMacroCommand());
+            AddCommand(new EditMacroCommand());
+            AddCommand(new DeleteMacroCommand());
+
+            AddCommand(new DebugCommand());
+
+            Keybinds.Setup();
             LoadConfigValues();
+            Macros.Load();
             Harmony.CreateAndPatchAll(Assembly.GetExecutingAssembly());
             Logger.LogInfo("lammas123.lammOS Loaded");
         }
 
-        public static bool AddCommand(string id, Command command)
+        public static bool AddCommand(Command command)
         {
-            if (HasCommand(id))
+            if (HasCommand(command.id))
             {
+                Logger.LogError("A command with the id '" + command.id + "' has already been added.");
                 return false;
             }
-            commands.Add(id, command);
+            if (IsShortcut(command.id))
+            {
+                Logger.LogWarning("There is a shortcut that will clash with the added command with the id '" + command.id + "'.");
+            }
+            commands.Add(command.id, command);
             return true;
         }
         public static bool HasCommand(string id)
@@ -138,7 +178,12 @@ namespace lammOS
         {
             if (IsShortcut(shortcut))
             {
+                Logger.LogError("A shortcut using the string '" + shortcut + "' already exists.");
                 return false;
+            }
+            if (HasCommand(shortcut))
+            {
+                Logger.LogWarning("There is a command with the id '" + shortcut + "' that will be overruled by the added shortcut.");
             }
             shortcuts.Add(shortcut, id);
             return true;
@@ -345,22 +390,41 @@ namespace lammOS
             }
 
             ShowTerminalClock = Config.Bind("General", "ShowTerminalClock", true, "If the terminal clock should be shown in the top right corner or not.");
+            ShowTerminalClockValue = ShowTerminalClock.Value;
 
-            ShowMinimumChars = Config.Bind("General", "ShowMinimumChars", false, "If the minimum characters required for the terminal to autocomplete a parameter should be shown. For example: 'p' when buying a pro flashlight, or 'te' for the teleporter, while 'telev' is the minimum for the television. Having this on all the time doesn't look the greatest, but it helps when learning typing shortcuts.");
+            ShowMinimumChars = Config.Bind("General", "ShowMinimumChars", false, "If the minimum characters required for the terminal to autocomplete an argument should be shown. For example: 'p' when buying a pro flashlight, or 'te' for the teleporter, while 'telev' is the minimum for the television. Having this on all the time doesn't look the greatest, but it helps when learning typing shortcuts.");
+            ShowMinimumCharsValue = ShowMinimumChars.Value;
 
-            CharsToAutocomplete = Config.Bind("General", "CharsToAutocomplete", 3, "The amount of characters required to autocomplete a parameter, such as when buying an item, the minimum value is 1. Values over the length of a parameter will be treated as the length of the parameter to avoid errors, meaning you'll have to type the full name of a parameter and no autocompleting can occur.");
+            CharsToAutocomplete = Config.Bind("General", "CharsToAutocomplete", 3, "The amount of characters required to autocomplete an argument, such as when buying an item, the minimum value is 1. Values over the length of an argument will be treated as the length of the argument to avoid errors, meaning you'll have to type the full name of the argument and no autocompleting can occur.");
             if (CharsToAutocomplete.Value < 1)
             {
                 CharsToAutocomplete.Value = 1;
             }
+            CharsToAutocompleteValue = CharsToAutocomplete.Value;
+
+            ShowCommandConfirmations = Config.Bind("General", "ShowCommandConfirmations", true, "If commands like >BUY should ask you for confirmation before doing something.");
+            ShowCommandConfirmationsValue = ShowCommandConfirmations.Value;
+
+            MaxCommandHistory = Config.Bind("General", "MaxCommandHistory", 25, "How far back the terminal should remember commands you've typed in, the minimum value is 1 and the maximum is 100.");
+            if (MaxCommandHistory.Value < 1)
+            {
+                MaxCommandHistory.Value = 1;
+            }
+            else if (MaxCommandHistory.Value > 100)
+            {
+                MaxCommandHistory.Value = 100;
+            }
+            MaxCommandHistoryValue = MaxCommandHistory.Value;
 
             ShowPercentagesOrRarity = Config.Bind("General", "ShowPercentagesOrRarity", "Percentage", "Whether a percentage (%) or rarity (fraction) should be shown next to things that have a chance of happening. Percentage or Rarity");
             if (ShowPercentagesOrRarity.Value != "Percentage" && ShowPercentagesOrRarity.Value != "Rarity")
             {
                 ShowPercentagesOrRarity.Value = "Percentage";
             }
+            ShowPercentagesOrRarityValue = ShowPercentagesOrRarity.Value;
 
             DisableTextPostProcessMethod = Config.Bind("General", "DisableTextPostProcessMethod", true, "If the terminal's TextPostProcess method should be disabled. lammOS does not use this method so it is disabled by default to make running commands a bit faster, but this option is here in case any other mods utilize it.");
+            DisableTextPostProcessMethodValue = DisableTextPostProcessMethod.Value;
 
             Config.Save();
         }
@@ -959,8 +1023,9 @@ namespace lammOS
             LoadEntities(ref terminal);
             PostLoadingEntities();
             LoadLogs(ref terminal);
-
+            
             SyncConfigValues();
+            Macros.Load();
         }
 
         internal void SetupClock(ref Terminal terminal)
@@ -987,8 +1052,17 @@ namespace lammOS
             {
                 if (keyword.word.Length == 2)
                 {
-                    AddCommand(keyword.word, new CodeCommand(keyword.word));
+                    AddCommand(new CodeCommand(keyword.word));
                 }
+            }
+        }
+        internal void AddCompatibilityCommands()
+        {
+            if (BepInEx.Bootstrap.Chainloader.PluginInfos.ContainsKey("com.malco.lethalcompany.moreshipupgrades"))
+            {
+                Logger.LogInfo("Adding Lategame Upgrades compatibility commands");
+                AddCommand(new DummyCommand("Lategame Upgrades", "lategame", "Displays information related to the Lategame Upgrades mod."));
+                AddCommand(new DummyCommand("Lategame Upgrades", "lgu", "Displays the purchaseable upgrades from the Lategame Upgrades store."));
             }
         }
         internal void ReplaceDefaultScreen(ref Terminal terminal)
@@ -998,6 +1072,52 @@ namespace lammOS
 
             TerminalNode resultNode = node.terminalOptions[0].result.terminalOptions[0].result;
             resultNode.displayText = resultNode.displayText.Substring(0, resultNode.displayText.IndexOf("Welcome to the FORTUNE-9 OS")) + newStartupText;
+        }
+        
+        internal void HandleCommand(string input, ref Terminal terminal, ref TerminalNode node)
+        {
+            if (currentCommand == null)
+            {
+                int offset = input.IndexOf(' ');
+                if (offset == -1)
+                {
+                    offset = input.Length;
+                }
+
+                Command.Handle(input.Substring(0, offset), input.Substring(offset == input.Length ? offset : offset + 1), ref terminal, ref node);
+            }
+            else if (currentCommand is ConfirmationCommand)
+            {
+                ConfirmationCommand.Handle(input, ref terminal, ref node);
+                currentCommand = null;
+            }
+        }
+        internal void HandleCommandResult(ref Terminal terminal, ref TerminalNode node)
+        {
+            if (!node.clearPreviousText)
+            {
+                node.clearPreviousText = true;
+                node.displayText = terminal.screenText.text + "\n\n" + node.displayText;
+            }
+
+            node.maxCharactersToType = 99999;
+            node.displayText = node.displayText.TrimStart('\n');
+
+            if (node.displayText == ">")
+            {
+                return;
+            }
+
+            if (node.displayText == "")
+            {
+                node.displayText = ">";
+                return;
+            }
+
+            if (!node.displayText.EndsWith(">"))
+            {
+                node.displayText = node.displayText.TrimEnd('\n') + "\n\n>";
+            }
         }
 
         [HarmonyPatch(typeof(Terminal))]
@@ -1012,11 +1132,12 @@ namespace lammOS
 
                 Instance.SetupClock(ref __instance);
 
-                if (!setup)
+                if (!isSetup)
                 {
                     Instance.AddCodeCommands();
+                    Instance.AddCompatibilityCommands();
                     Instance.ReplaceDefaultScreen(ref __instance);
-                    setup = true;
+                    isSetup = true;
                 }
 
                 SyncedConfig.Setup();
@@ -1027,47 +1148,20 @@ namespace lammOS
             [HarmonyPriority(2147483647)]
             public static bool PreParsePlayerSentence(ref Terminal __instance, ref TerminalNode __result)
             {
+                string input = __instance.screenText.text.Substring(__instance.screenText.text.Length - __instance.textAdded);
+
+                commandHistory.Add(input);
+                while (commandHistory.Count > MaxCommandHistoryValue)
+                {
+                    commandHistory.RemoveAt(0);
+                }
+
                 TerminalNode node = ScriptableObject.CreateInstance<TerminalNode>();
                 node.displayText = "";
                 node.clearPreviousText = true;
                 node.terminalEvent = "";
 
-                string input = __instance.screenText.text.Substring(__instance.screenText.text.Length - __instance.textAdded);
-                int offset = input.IndexOf(' ');
-                if (offset == -1)
-                {
-                    offset = input.Length;
-                }
-                string commandId = input.Substring(0, offset);
-
-                if (IsShortcut(commandId))
-                {
-                    commandId = GetCommandIdByShortcut(commandId);
-                    __instance.screenText.text = __instance.screenText.text.Substring(0, __instance.screenText.text.Length - __instance.textAdded) + commandId + input.Substring(offset);
-                }
-
-                Command command = GetCommand(commandId);
-                if (command == null)
-                {
-                    node.displayText = "Unknown command: '" + commandId + "'\n\n>";
-                    node.playSyncedClip = terminalSyncedSounds["error"];
-                    __result = node;
-                    return false;
-                }
-
-                try
-                {
-                    command.Execute(ref __instance, input.Substring(offset == input.Length ? offset : offset + 1), ref node);
-                }
-                catch (Exception e)
-                {
-                    node = ScriptableObject.CreateInstance<TerminalNode>();
-                    node.displayText = "An error occurred executing the command: '" + commandId + "'\n\n>";
-                    node.clearPreviousText = true;
-                    node.terminalEvent = "";
-                    node.playSyncedClip = terminalSyncedSounds["error"];
-                    Logger.LogError("An error occurred executing the command: '" + commandId + "'\n" + e.ToString());
-                }
+                Instance.HandleCommand(input, ref __instance, ref node);
 
                 __result = node;
                 return false;
@@ -1078,29 +1172,7 @@ namespace lammOS
             [HarmonyPriority(-2147483648)]
             public static void PostParsePlayerSentence(ref Terminal __instance, ref TerminalNode __result)
             {
-                if (!__result.clearPreviousText)
-                {
-                    __instance.screenText.text = "\n" + __instance.screenText.text.TrimStart('\n');
-                }
-
-                __result.maxCharactersToType = 99999;
-                __result.displayText = __result.displayText.TrimStart('\n');
-
-                if (__result.displayText == ">")
-                {
-                    return;
-                }
-
-                if (__result.displayText == "")
-                {
-                    __result.displayText = ">";
-                    return;
-                }
-
-                if (!__result.displayText.EndsWith(">"))
-                {
-                    __result.displayText = __result.displayText.TrimEnd('\n') + "\n\n>";
-                }
+                Instance.HandleCommandResult(ref __instance, ref __result);
             }
 
             [HarmonyPatch("BuyItemsServerRpc")]
@@ -1183,6 +1255,25 @@ namespace lammOS
                 {
                     node.displayText = helpNodeText;
                     helpNodeText = "";
+                }
+            }
+
+            [HarmonyPatch("BeginUsingTerminal")]
+            [HarmonyPrefix]
+            [HarmonyPriority(2147483647)]
+            public static void PreBeginUsingTerminal()
+            {
+                commandHistoryIndex = -1;
+            }
+
+            [HarmonyPatch("TextChanged")]
+            [HarmonyPostfix]
+            [HarmonyPriority(-2147483648)]
+            public static void PostTextChanged(ref Terminal __instance)
+            {
+                if (commandHistoryIndex != -1 && commandHistory[commandHistoryIndex] != __instance.screenText.text.Substring(__instance.screenText.text.Length - __instance.textAdded))
+                {
+                    commandHistoryIndex = -1;
                 }
             }
 
@@ -1318,32 +1409,55 @@ namespace lammOS
         {
             public HelpCommand()
             {
+                category = "Helpful";
+                id = "help";
                 description = "View helpful information about available commands. Why did you need help to know what help does?";
-                AddShortcut("?", "help");
-                AddShortcut("h", "help");
+                AddShortcut("?", id);
+                AddShortcut("h", id);
                 args = "(Command)";
             }
 
             public void GenerateHelpPage(ref TerminalNode node)
             {
-                foreach (string commandId in GetCommandIds())
+                Dictionary<string, List<Command>> categories = new();
+                foreach (Command command in GetCommands())
                 {
-                    Command command = GetCommand(commandId);
                     if (command.hidden)
                     {
                         continue;
                     }
 
-                    node.displayText += ">" + commandId.ToUpper();
-                    if (command.args != "")
+                    if (!categories.ContainsKey(command.category))
                     {
-                        node.displayText += " " + command.args;
+                        categories[command.category] = new();
                     }
-                    node.displayText += "\n";
+
+                    categories[command.category].Add(command);
+                }
+
+                foreach (string category in categories.Keys)
+                {
+                    node.displayText += "\n [" + category + "]\n";
+
+                    foreach (Command command in categories[category])
+                    {
+                        node.displayText += ">" + command.id.ToUpper();
+                        if (command.args != "")
+                        {
+                            node.displayText += " " + command.args;
+                        }
+                        node.displayText += "\n";
+                    }
                 }
             }
             public void GenerateCommandHelp(string commandId, Command command, ref TerminalNode node)
             {
+                node.displayText = " [" + command.category + "]\n>" + commandId.ToUpper();
+                if (command.args != "")
+                {
+                    node.displayText += " " + command.args;
+                }
+
                 List<string> shortcuts = new();
                 foreach (string shortcut in GetShortcuts())
                 {
@@ -1351,12 +1465,6 @@ namespace lammOS
                     {
                         shortcuts.Add(">" + shortcut.ToUpper());
                     }
-                }
-                node.displayText = ">" + commandId.ToUpper();
-
-                if (command.args != "")
-                {
-                    node.displayText += " " + command.args;
                 }
                 if (shortcuts.Count != 0)
                 {
@@ -1390,12 +1498,61 @@ namespace lammOS
             }
         }
 
+        public class ShortcutsCommand : Command
+        {
+            public ShortcutsCommand()
+            {
+                category = "Helpful";
+                id = "shortcuts";
+                description = "View all of the shortcuts there are for commands.";
+                AddShortcut("sh", id);
+            }
+
+            public override void Execute(ref Terminal terminal, string input, ref TerminalNode node)
+            {
+                Dictionary<string, List<string>> categories = new();
+                foreach (string shortcut in GetShortcuts())
+                {
+                    Command command = GetCommand(GetCommandIdByShortcut(shortcut));
+
+                    if (command.hidden)
+                    {
+                        continue;
+                    }
+
+                    if (!categories.ContainsKey(command.category))
+                    {
+                        categories[command.category] = new();
+                    }
+
+                    categories[command.category].Add(">" + command.id.ToUpper() + "  ===  >" + shortcut.ToUpper() + "\n");
+                }
+
+                node.displayText = "Shortcuts:";
+                foreach (string category in categories.Keys)
+                {
+                    node.displayText += "\n [" + category + "]\n";
+
+                    foreach (string shortcut in categories[category])
+                    {
+                        node.displayText += shortcut;
+                    }
+                }
+                if (node.displayText == "Shortcuts:")
+                {
+                    node.displayText += "\nThere are no shortcuts.";
+                }
+            }
+        }
+
         public class MoonsCommand : Command
         {
             public MoonsCommand()
             {
+                category = "Moons";
+                id = "moons";
                 description = "Lists the available moons you can travel to.";
-                AddShortcut("ms", "moons");
+                AddShortcut("ms", id);
             }
 
             public void GenerateMoonIndexWeather(string moonId, SelectableLevel level, ref TerminalNode node)
@@ -1462,8 +1619,10 @@ namespace lammOS
         {
             public MoonCommand()
             {
+                category = "Moons";
+                id = "moon";
                 description = "View information about a moon.";
-                AddShortcut("m", "moon");
+                AddShortcut("m", id);
                 args = "(Moon)";
             }
 
@@ -1724,12 +1883,16 @@ namespace lammOS
             }
         }
 
-        public class RouteCommand : Command
+        public class RouteCommand : ConfirmationCommand
         {
+            public string moonId = null;
+
             public RouteCommand()
             {
+                category = "Moons";
+                id = "route";
                 description = "Travel to the specified moon.";
-                AddShortcut("r", "route");
+                AddShortcut("r", id);
                 args = "[Moon]";
             }
 
@@ -1794,24 +1957,49 @@ namespace lammOS
                     return;
                 }
 
-                int cost = GetMoonCost(resultId);
+                moonId = resultId;
+
+                if (ShowCommandConfirmationsValue)
+                {
+                    currentCommand = this;
+                    node.displayText = "Would you like to route to " + moon.GetMoon().PlanetName + " for $" + GetMoonCost(resultId).ToString() + "?\nType CONFIRM to confirm routing.";
+                    return;
+                }
+
+                Route(ref terminal, ref node);
+                moonId = null;
+            }
+
+            public void Route(ref Terminal terminal, ref TerminalNode node)
+            {
+                Moon moon = moons[moonId];
+
+                int cost = GetMoonCost(moonId);
                 if (terminal.groupCredits < cost)
                 {
                     ErrorResponse("You do not have enough credits to go to that moon.", ref node);
                     return;
                 }
 
-                terminal.useCreditsCooldown = true;
                 if (terminal.IsHost)
                 {
-                    startOfRound.ChangeLevelServerRpc(terminalNode.buyRerouteToMoon, terminal.groupCredits - cost);
+                    FindObjectOfType<StartOfRound>().ChangeLevelServerRpc(moon.GetNode().buyRerouteToMoon, terminal.groupCredits - cost);
                 }
                 else
                 {
                     terminal.groupCredits -= cost;
-                    startOfRound.ChangeLevelServerRpc(terminalNode.buyRerouteToMoon, terminal.groupCredits);
+                    FindObjectOfType<StartOfRound>().ChangeLevelServerRpc(moon.GetNode().buyRerouteToMoon, terminal.groupCredits);
                 }
                 node.displayText = "Routing autopilot to " + moon.GetMoon().PlanetName + ".";
+            }
+
+            public override void Confirmed(ref Terminal terminal, ref TerminalNode node)
+            {
+                node.clearPreviousText = false;
+
+                Route(ref terminal, ref node);
+
+                moonId = null;
             }
         }
 
@@ -1819,8 +2007,10 @@ namespace lammOS
         {
             public StoreCommand()
             {
+                category = "Items";
+                id = "store";
                 description = "View the items available to buy.";
-                AddShortcut("x", "store");
+                AddShortcut("x", id);
             }
 
             public void GeneratePurchaseableItems(ref Terminal terminal, ref TerminalNode node)
@@ -1906,12 +2096,18 @@ namespace lammOS
             }
         }
 
-        public class BuyCommand : Command
+        public class BuyCommand : ConfirmationCommand
         {
+            public PurchaseableItem purchaseableItem = null;
+            public int amount = 0;
+            public PurchaseableUnlockable purchaseableUnlockable = null;
+            
             public BuyCommand()
             {
-                description = "Purchase an available item in the store.";
-                AddShortcut("b", "buy");
+                category = "Items";
+                id = "buy";
+                description = "Purchase any available item in the store.";
+                AddShortcut("b", id);
                 args = "[Item] (Amount)";
             }
 
@@ -1962,47 +2158,19 @@ namespace lammOS
                     return;
                 }
 
-                int cost = GetItemCost(purchaseableItem.GetItem(ref terminal).itemName.ToLower());
-                if (terminal.groupCredits < cost * amount)
+                this.purchaseableItem = purchaseableItem;
+                this.amount = amount;
+
+                if (ShowCommandConfirmationsValue)
                 {
-                    ErrorResponse("You do not have enough credits to purchase that item.", ref node);
+                    currentCommand = this;
+                    node.displayText = "Would you like to purchase " + purchaseableItem.GetItem(ref terminal).itemName + " x" + amount.ToString() + " for $" + (GetItemCost(purchaseableItem.GetItem(ref terminal).itemName.ToLower()) * amount).ToString() + "?\nType CONFIRM to confirm your purchase.";
                     return;
                 }
-                if (amount + terminal.numberOfItemsInDropship > SyncedConfig.Instance.MaxDropshipItemsValue)
-                {
-                    ErrorResponse("There is not enough space on the dropship for these items, there are currently " + terminal.numberOfItemsInDropship.ToString() + "/" + SyncedConfig.Instance.MaxDropshipItemsValue.ToString() + " items en route.", ref node);
-                    return;
-                }
-
-                for (int i = 0; i < amount; i++)
-                {
-                    terminal.orderedItemsFromTerminal.Add(purchaseableItem.index);
-                    terminal.numberOfItemsInDropship++;
-                    terminal.groupCredits = Mathf.Clamp(terminal.groupCredits - cost, 0, 10000000);
-
-                    if (!terminal.IsHost && terminal.orderedItemsFromTerminal.Count == 12)
-                    {
-                        terminal.BuyItemsServerRpc(terminal.orderedItemsFromTerminal.ToArray(), terminal.groupCredits, terminal.numberOfItemsInDropship);
-                        terminal.orderedItemsFromTerminal.Clear();
-                    }
-                }
-
-                if (terminal.IsServer)
-                {
-                    terminal.SyncGroupCreditsClientRpc(terminal.groupCredits, terminal.numberOfItemsInDropship);
-                }
-                else
-                {
-                    terminal.useCreditsCooldown = true;
-                    if (terminal.orderedItemsFromTerminal.Count > 1)
-                    {
-                        terminal.BuyItemsServerRpc(terminal.orderedItemsFromTerminal.ToArray(), terminal.groupCredits, terminal.numberOfItemsInDropship);
-                        terminal.orderedItemsFromTerminal.Clear();
-                    }
-                }
-
-                node.displayText = "Purchased " + purchaseableItem.GetItem(ref terminal).itemName + " x" + amount.ToString() + " for $" + (cost * amount).ToString() + ".";
-                node.playSyncedClip = terminalSyncedSounds["buy"];
+                
+                TryPurchaseItem(ref terminal, ref node);
+                purchaseableItem = null;
+                amount = 0;
             }
             public void PurchaseUnlockable(string input, ref Terminal terminal, ref TerminalNode node)
             {
@@ -2036,6 +2204,83 @@ namespace lammOS
                     return;
                 }
 
+                this.purchaseableUnlockable = purchaseableUnlockable;
+
+                if (ShowCommandConfirmationsValue)
+                {
+                    currentCommand = this;
+                    node.displayText = "Would you like to purchase a " + purchaseableUnlockable.GetNode().creatureName + " for $" + GetUnlockableCost(purchaseableUnlockable.GetNode().creatureName.ToLower()).ToString() + "?\nType CONFIRM to confirm your purchase.";
+                    return;
+                }
+
+                TryPurchaseUnlockable(ref terminal, ref node);
+                purchaseableUnlockable = null;
+            }
+
+            public override void Execute(ref Terminal terminal, string input, ref TerminalNode node)
+            {
+                if (input == "")
+                {
+                    ErrorResponse("Please enter an item to purchase.", ref node);
+                    return;
+                }
+                if (terminal.useCreditsCooldown)
+                {
+                    ErrorResponse("You're on a credit usage cooldown.", ref node);
+                    return;
+                }
+
+                input = input.ToLower();
+                ParseInput(input, out string itemInput, out int amount);
+
+                PurchaseItem(input, itemInput, amount, ref terminal, ref node);
+            }
+
+            public void TryPurchaseItem(ref Terminal terminal, ref TerminalNode node)
+            {
+                int cost = GetItemCost(purchaseableItem.GetItem(ref terminal).itemName.ToLower());
+                if (terminal.groupCredits < cost * amount)
+                {
+                    ErrorResponse("You do not have enough credits to purchase that item.", ref node);
+                    return;
+                }
+                if (amount + terminal.numberOfItemsInDropship > SyncedConfig.Instance.MaxDropshipItemsValue)
+                {
+                    ErrorResponse("There is not enough space on the dropship for these items, there are currently " + terminal.numberOfItemsInDropship.ToString() + "/" + SyncedConfig.Instance.MaxDropshipItemsValue.ToString() + " items en route.", ref node);
+                    return;
+                }
+
+                for (int i = 0; i < amount; i++)
+                {
+                    terminal.orderedItemsFromTerminal.Add(purchaseableItem.index);
+                    terminal.numberOfItemsInDropship++;
+                    terminal.groupCredits = Mathf.Clamp(terminal.groupCredits - cost, 0, 10000000);
+
+                    if (!terminal.IsHost && terminal.orderedItemsFromTerminal.Count == 12)
+                    {
+                        terminal.BuyItemsServerRpc(terminal.orderedItemsFromTerminal.ToArray(), terminal.groupCredits, terminal.numberOfItemsInDropship);
+                        terminal.orderedItemsFromTerminal.Clear();
+                    }
+                }
+
+                if (terminal.IsServer)
+                {
+                    terminal.SyncGroupCreditsClientRpc(terminal.groupCredits, terminal.numberOfItemsInDropship);
+                }
+                else
+                {
+                    if (terminal.orderedItemsFromTerminal.Count > 1)
+                    {
+                        terminal.BuyItemsServerRpc(terminal.orderedItemsFromTerminal.ToArray(), terminal.groupCredits, terminal.numberOfItemsInDropship);
+                        terminal.orderedItemsFromTerminal.Clear();
+                    }
+                }
+
+                node.displayText = "Purchased " + purchaseableItem.GetItem(ref terminal).itemName + " x" + amount.ToString() + " for $" + (cost * amount).ToString() + ".";
+                node.playSyncedClip = terminalSyncedSounds["buy"];
+            }
+            public void TryPurchaseUnlockable(ref Terminal terminal, ref TerminalNode node)
+            {
                 int cost = GetUnlockableCost(purchaseableUnlockable.GetNode().creatureName.ToLower());
                 if (terminal.groupCredits < cost)
                 {
@@ -2058,28 +2303,112 @@ namespace lammOS
                     terminal.groupCredits = Mathf.Clamp(terminal.groupCredits - cost, 0, 10000000);
                     FindObjectOfType<StartOfRound>().BuyShipUnlockableServerRpc(purchaseableUnlockable.GetNode().shipUnlockableID, terminal.groupCredits);
                 }
-                
+
                 node.displayText = "Purchased " + purchaseableUnlockable.GetNode().creatureName + " for $" + cost.ToString() + ".";
                 node.playSyncedClip = terminalSyncedSounds["buy"];
+            }
+
+            public override void Confirmed(ref Terminal terminal, ref TerminalNode node)
+            {
+                node.clearPreviousText = false;
+                if (purchaseableItem != null)
+                {
+                    TryPurchaseItem(ref terminal, ref node);
+                    purchaseableItem = null;
+                    amount = 0;
+                }
+                else if (purchaseableUnlockable != null)
+                {
+                    TryPurchaseUnlockable(ref terminal, ref node);
+                    purchaseableUnlockable = null;
+                }
+            }
+        }
+
+        public class StorageCommand : Command
+        {
+            public StorageCommand()
+            {
+                category = "Items";
+                id = "storage";
+                description = "View unlockables stored away in storage.";
+                AddShortcut("st", id);
+            }
+
+            public override void Execute(ref Terminal terminal, string input, ref TerminalNode node)
+            {
+                node.displayText = "Use the RETRIEVE command to take unlockables out of storage.\nStored Unlockables:";
+                foreach (PurchaseableUnlockable unlockable in purchaseableUnlockables.Values)
+                {
+                    if (unlockable.GetUnlockable().inStorage)
+                    {
+                        node.displayText += "\n* ";
+                        if (ShowMinimumChars.Value)
+                        {
+                            node.displayText += "(" + unlockable.shortestChars + ") ";
+                        }
+                        node.displayText += unlockable.GetNode().creatureName;
+                    }
+                }
+                if (node.displayText == "Use the RETRIEVE command to take unlockables out of storage.\nStored Unlockables:")
+                {
+                    node.displayText += "\nThere are no unlockables in storage.";
+                }
+            }
+        }
+
+        public class RetrieveCommand : Command
+        {
+            public RetrieveCommand()
+            {
+                category = "Items";
+                id = "retrieve";
+                description = "Retrieve an unlockable from storage.";
+                AddShortcut("re", id);
+                args = "[Item]";
             }
 
             public override void Execute(ref Terminal terminal, string input, ref TerminalNode node)
             {
                 if (input == "")
                 {
-                    ErrorResponse("Please enter an item to purchase.", ref node);
-                    return;
-                }
-                if (terminal.useCreditsCooldown)
-                {
-                    ErrorResponse("You're on a credit usage cooldown.", ref node);
+                    ErrorResponse("Please enter an unlockable to take out of storage.", ref node);
                     return;
                 }
 
                 input = input.ToLower();
-                ParseInput(input, out string itemInput, out int amount);
+                PurchaseableUnlockable purchaseableUnlockable = null;
+                foreach (PurchaseableUnlockable unlockable in purchaseableUnlockables.Values)
+                {
+                    if (unlockable.GetNode().creatureName.ToLower().StartsWith(input))
+                    {
+                        purchaseableUnlockable = unlockable;
+                        break;
+                    }
+                }
+                if (purchaseableUnlockable == null)
+                {
+                    ErrorResponse("No unlockable goes by the name: '" + input + "'", ref node);
+                    return;
+                }
+                if (CheckNotEnoughChars(input.Length, purchaseableUnlockable.GetNode().creatureName.Length, ref node))
+                {
+                    return;
+                }
 
-                PurchaseItem(input, itemInput, amount, ref terminal, ref node);
+                if (!purchaseableUnlockable.GetUnlockable().inStorage)
+                {
+                    ErrorResponse("That unlockable is not in storage.", ref node);
+                    return;
+                }
+                if (!purchaseableUnlockable.GetUnlockable().hasBeenUnlockedByPlayer && !purchaseableUnlockable.GetUnlockable().alreadyUnlocked)
+                {
+                    ErrorResponse("You do not own that unlockable.", ref node);
+                    return;
+                }
+
+                FindObjectOfType<StartOfRound>().ReturnUnlockableFromStorageServerRpc(purchaseableUnlockable.GetNode().shipUnlockableID);
+                node.displayText = "Returned unlockable from storage.";
             }
         }
 
@@ -2087,8 +2416,10 @@ namespace lammOS
         {
             public BestiaryCommand()
             {
+                category = "Informational";
+                id = "bestiary";
                 description = "List or view information about scanned entities.";
-                AddShortcut("e", "bestiary");
+                AddShortcut("e", id);
                 args = "(Entity)";
             }
 
@@ -2176,165 +2507,15 @@ namespace lammOS
             }
         }
 
-        public class StorageCommand : Command
-        {
-            public StorageCommand()
-            {
-                description = "View unlockables stored away in storage.";
-                AddShortcut("st", "storage");
-            }
-
-            public override void Execute(ref Terminal terminal, string input, ref TerminalNode node)
-            {
-                node.displayText = "Use the RETRIEVE command to take unlockables out of storage.\nStored Unlockables:";
-                foreach (PurchaseableUnlockable unlockable in purchaseableUnlockables.Values)
-                {
-                    if (unlockable.GetUnlockable().inStorage)
-                    {
-                        node.displayText += "\n* ";
-                        if (ShowMinimumChars.Value)
-                        {
-                            node.displayText += "(" + unlockable.shortestChars + ") ";
-                        }
-                        node.displayText += unlockable.GetNode().creatureName;
-                    }
-                }
-                if (node.displayText == "Use the RETRIEVE command to take unlockables out of storage.\nStored Unlockables:")
-                {
-                    node.displayText += "\nThere are no unlockables in storage.";
-                }
-            }
-        }
-
-        public class RetrieveCommand : Command
-        {
-            public RetrieveCommand()
-            {
-                description = "Retrieve an unlockable from storage.";
-                AddShortcut("re", "retrieve");
-                args = "[Item]";
-            }
-
-            public override void Execute(ref Terminal terminal, string input, ref TerminalNode node)
-            {
-                if (input == "")
-                {
-                    ErrorResponse("Please enter an unlockable to take out of storage.", ref node);
-                    return;
-                }
-
-                input = input.ToLower();
-                PurchaseableUnlockable purchaseableUnlockable = null;
-                foreach (PurchaseableUnlockable unlockable in purchaseableUnlockables.Values)
-                {
-                    if (unlockable.GetNode().creatureName.ToLower().StartsWith(input))
-                    {
-                        purchaseableUnlockable = unlockable;
-                        break;
-                    }
-                }
-                if (purchaseableUnlockable == null)
-                {
-                    ErrorResponse("No unlockable goes by the name: '" + input + "'", ref node);
-                    return;
-                }
-                if (CheckNotEnoughChars(input.Length, purchaseableUnlockable.GetNode().creatureName.Length, ref node))
-                {
-                    return;
-                }
-
-                if (!purchaseableUnlockable.GetUnlockable().inStorage)
-                {
-                    ErrorResponse("That unlockable is not in storage.", ref node);
-                    return;
-                }
-                if (!purchaseableUnlockable.GetUnlockable().hasBeenUnlockedByPlayer && !purchaseableUnlockable.GetUnlockable().alreadyUnlocked)
-                {
-                    ErrorResponse("You do not own that unlockable.", ref node);
-                    return;
-                }
-
-                FindObjectOfType<StartOfRound>().ReturnUnlockableFromStorageServerRpc(purchaseableUnlockable.GetNode().shipUnlockableID);
-                node.displayText = "Returned unlockable from storage.";
-            }
-        }
-
-        public class MonitorCommand : Command
-        {
-            public MonitorCommand()
-            {
-                description = "View the main monitor on the terminal.";
-                AddShortcut("v", "monitor");
-            }
-
-            public override void Execute(ref Terminal terminal, string input, ref TerminalNode node)
-            {
-                foreach (CompatibleNoun cn in terminalKeywords["view"].compatibleNouns)
-                {
-                    if (cn.noun.word == "monitor")
-                    {
-                        node.displayTexture = cn.result.displayTexture;
-                        node.persistentImage = cn.result.persistentImage;
-                        return;
-                    }
-                }
-                ErrorResponse("Failed to view monitor.", ref node);
-            }
-        }
-
-        public class ScanCommand : Command
-        {
-            public ScanCommand()
-            {
-                description = "View the amount of items and total value remaining outside the ship.";
-                AddShortcut("sc", "scan");
-            }
-
-            public override void Execute(ref Terminal terminal, string input, ref TerminalNode node)
-            {
-                int shipCount = 0, shipValue = 0, indoorCount = 0, indoorValue = 0, outdoorCount = 0, outdoorValue = 0;
-                string outdoorItems = "", indoorItems = "";
-
-                foreach (GrabbableObject item in FindObjectsOfType<GrabbableObject>())
-                {
-                    if (!item.itemProperties.isScrap)
-                    {
-                        continue;
-                    }
-
-                    if (item.isInShipRoom)
-                    {
-                        shipCount++;
-                        shipValue += item.scrapValue;
-                        continue;
-                    }
-
-                    if (item.isInFactory)
-                    {
-                        indoorCount++;
-                        indoorValue += item.scrapValue;
-                        indoorItems += "\n* " + item.itemProperties.itemName + " $" + item.scrapValue.ToString();
-                        continue;
-                    }
-
-                    outdoorCount++;
-                    outdoorValue += item.scrapValue;
-                    outdoorItems += "\n* " + item.itemProperties.itemName + " $" + item.scrapValue.ToString();
-                }
-
-                node.displayText = "Ship: " + shipCount.ToString() + " objects with a value of $" + shipValue.ToString() +
-                    "\n\nIndoors: " + indoorCount.ToString() + " objects with a value of $" + indoorValue.ToString() + indoorItems +
-                    "\n\nOutdoors: " + outdoorCount.ToString() + " objects with a value of $" + outdoorValue.ToString() + outdoorItems;
-            }
-        }
-
         public class SigurdCommand : Command
         {
             public SigurdCommand()
             {
+                category = "Informational";
+                id = "sigurd";
                 description = "View all of the logs from Sigurd you have collected.";
-                AddShortcut("logs", "sigurd");
-                AddShortcut("log", "sigurd");
+                AddShortcut("logs", id);
+                AddShortcut("log", id);
                 args = "(Log)";
             }
 
@@ -2398,12 +2579,39 @@ namespace lammOS
             }
         }
 
+        public class MonitorCommand : Command
+        {
+            public MonitorCommand()
+            {
+                category = "Radar";
+                id = "monitor";
+                description = "View the main monitor on the terminal.";
+                AddShortcut("v", id);
+            }
+
+            public override void Execute(ref Terminal terminal, string input, ref TerminalNode node)
+            {
+                foreach (CompatibleNoun cn in terminalKeywords["view"].compatibleNouns)
+                {
+                    if (cn.noun.word == "monitor")
+                    {
+                        node.displayTexture = cn.result.displayTexture;
+                        node.persistentImage = cn.result.persistentImage;
+                        return;
+                    }
+                }
+                ErrorResponse("Failed to view monitor.", ref node);
+            }
+        }
+
         public class TargetsCommand : Command
         {
             public TargetsCommand()
             {
+                category = "Radar";
+                id = "targets";
                 description = "View all of the radar targets you can monitor.";
-                AddShortcut("rt", "targets");
+                AddShortcut("rt", id);
             }
 
             public override void Execute(ref Terminal terminal, string input, ref TerminalNode node)
@@ -2424,9 +2632,11 @@ namespace lammOS
         {
             public SwitchCommand()
             {
+                category = "Radar";
+                id = "switch";
                 description = "Switch to another player or radar booster on the monitor.";
-                AddShortcut("s", "switch");
-                args = "(Player or Radar)";
+                AddShortcut("s", id);
+                args = "(Radar target)";
             }
 
             public override void Execute(ref Terminal terminal, string input, ref TerminalNode node)
@@ -2464,8 +2674,10 @@ namespace lammOS
         {
             public PingCommand()
             {
+                category = "Radar";
+                id = "ping";
                 description = "Ping a radar booster playing a sound.";
-                AddShortcut("p", "ping");
+                AddShortcut("p", id);
                 args = "(Radar booster)";
             }
 
@@ -2515,8 +2727,10 @@ namespace lammOS
         {
             public FlashCommand()
             {
+                category = "Radar";
+                id = "flash";
                 description = "Flash a radar booster blinding and stunning nearby crew and entities temporarily.";
-                AddShortcut("f", "flash");
+                AddShortcut("f", id);
                 args = "(Radar booster)";
             }
 
@@ -2562,12 +2776,160 @@ namespace lammOS
             }
         }
 
+        public class DoorCommand : Command
+        {
+            public DoorCommand()
+            {
+                category = "Interactive";
+                id = "door";
+                description = "Toggle the ship's door.";
+                AddShortcut("d", id);
+            }
+
+            public override void Execute(ref Terminal terminal, string input, ref TerminalNode node)
+            {
+                GameObject.Find(StartOfRound.Instance.hangarDoorsClosed ? "StartButton" : "StopButton").GetComponentInChildren<InteractTrigger>().onInteract.Invoke(GameNetworkManager.Instance.localPlayerController);
+            }
+        }
+
+        public class LightsCommand : Command
+        {
+            public LightsCommand()
+            {
+                category = "Interactive";
+                id = "lights";
+                description = "Toggle the ship's lights.";
+                AddShortcut("l", id);
+            }
+
+            public override void Execute(ref Terminal terminal, string input, ref TerminalNode node)
+            {
+                StartOfRound.Instance.shipRoomLights.ToggleShipLights();
+            }
+        }
+
+        public class TeleporterCommand : Command
+        {
+            public TeleporterCommand()
+            {
+                category = "Interactive";
+                id = "tp";
+                description = "Remotely activate the teleporter.";
+            }
+
+            public override void Execute(ref Terminal terminal, string input, ref TerminalNode node)
+            {
+                foreach (ShipTeleporter teleporter in FindObjectsOfType<ShipTeleporter>())
+                {
+                    if (!teleporter.isInverseTeleporter)
+                    {
+                        if (teleporter.IsSpawned && teleporter.isActiveAndEnabled)
+                        {
+                            if (teleporter.buttonTrigger.interactable)
+                            {
+                                teleporter.PressTeleportButtonOnLocalClient();
+                                return;
+                            }
+                            ErrorResponse("The teleporter is on cooldown.", ref node);
+                            return;
+                        }
+                        ErrorResponse("The teleporter is in storage.", ref node);
+                        return;
+                    }
+                }
+                ErrorResponse("You do not own a teleporter.", ref node);
+            }
+        }
+
+        public class InverseTeleporterCommand : Command
+        {
+            public InverseTeleporterCommand()
+            {
+                category = "Interactive";
+                id = "itp";
+                description = "Remotely activate the inverse teleporter.";
+            }
+
+            public override void Execute(ref Terminal terminal, string input, ref TerminalNode node)
+            {
+                foreach (ShipTeleporter teleporter in FindObjectsOfType<ShipTeleporter>())
+                {
+                    if (teleporter.isInverseTeleporter)
+                    {
+                        if (teleporter.IsSpawned && teleporter.isActiveAndEnabled)
+                        {
+                            if (teleporter.buttonTrigger.interactable)
+                            {
+                                teleporter.PressTeleportButtonOnLocalClient();
+                                return;
+                            }
+                            ErrorResponse("The inverse teleporter is on cooldown.", ref node);
+                            return;
+                        }
+                        ErrorResponse("The inverse teleporter is in storage.", ref node);
+                        return;
+                    }
+                }
+                ErrorResponse("You do not own an inverse teleporter.", ref node);
+            }
+        }
+
+        public class ScanCommand : Command
+        {
+            public ScanCommand()
+            {
+                category = "Other";
+                id = "scan";
+                description = "View the amount of items and total value remaining outside the ship.";
+                AddShortcut("sc", id);
+            }
+
+            public override void Execute(ref Terminal terminal, string input, ref TerminalNode node)
+            {
+                int shipCount = 0, shipValue = 0, indoorCount = 0, indoorValue = 0, outdoorCount = 0, outdoorValue = 0;
+                string outdoorItems = "", indoorItems = "";
+
+                foreach (GrabbableObject item in FindObjectsOfType<GrabbableObject>())
+                {
+                    if (!item.itemProperties.isScrap)
+                    {
+                        continue;
+                    }
+
+                    if (item.isInShipRoom)
+                    {
+                        shipCount++;
+                        shipValue += item.scrapValue;
+                        continue;
+                    }
+
+                    if (item.isInFactory)
+                    {
+                        indoorCount++;
+                        indoorValue += item.scrapValue;
+                        indoorItems += "\n* " + item.itemProperties.itemName + " $" + item.scrapValue.ToString();
+                        continue;
+                    }
+
+                    outdoorCount++;
+                    outdoorValue += item.scrapValue;
+                    outdoorItems += "\n* " + item.itemProperties.itemName + " $" + item.scrapValue.ToString();
+                }
+
+                node.displayText = "Ship: " + shipCount.ToString() + " objects with a value of $" + shipValue.ToString() +
+                    "\n\nIndoors: " + indoorCount.ToString() + " objects with a value of $" + indoorValue.ToString() + indoorItems +
+                    "\n\nOutdoors: " + outdoorCount.ToString() + " objects with a value of $" + outdoorValue.ToString() + outdoorItems;
+            }
+        }
+
         public class TransmitCommand : Command
         {
             public TransmitCommand()
             {
+                category = "Other";
+                id = "transmit";
                 description = "Transmit at most a 9 character message using the signal transmitter to your crew.";
-                AddShortcut("t", "transmit");
+                AddShortcut("t", id);
                 args = "[9 characters]";
             }
 
@@ -2601,41 +2963,14 @@ namespace lammOS
             }
         }
 
-        public class EjectCommand : Command
-        {
-            public EjectCommand()
-            {
-                description = "Eject your crew into space.";
-            }
-
-            public override void Execute(ref Terminal terminal, string input, ref TerminalNode node)
-            {
-                if (StartOfRound.Instance.isChallengeFile)
-                {
-                    ErrorResponse("You are unable to be ejected on challenge moons.", ref node);
-                    return;
-                }
-                if (!StartOfRound.Instance.inShipPhase)
-                {
-                    ErrorResponse("You must be in orbit to be ejected.", ref node);
-                    return;
-                }
-                if (StartOfRound.Instance.firingPlayersCutsceneRunning)
-                {
-                    ErrorResponse("Your crew is already being ejected.", ref node);
-                    return;
-                }
-
-                StartOfRound.Instance.ManuallyEjectPlayersServerRpc();
-            }
-        }
-
         public class ClearCommand : Command
         {
             public ClearCommand()
             {
+                category = "Other";
+                id = "clr";
                 description = "Clear all text from the terminal.";
-                AddShortcut("c", "clr");
+                AddShortcut("c", id);
             }
 
             public override void Execute(ref Terminal terminal, string input, ref TerminalNode node)
@@ -2648,8 +2983,10 @@ namespace lammOS
         {
             public CodesCommand()
             {
+                category = "Other";
+                id = "codes";
                 description = "View all of the alphanumeric codes and what objects they correspond to within the building.";
-                AddShortcut("co", "codes");
+                AddShortcut("co", id);
             }
 
             public override void Execute(ref Terminal terminal, string input, ref TerminalNode node)
@@ -2678,122 +3015,12 @@ namespace lammOS
             }
         }
 
-        public class DoorCommand : Command
-        {
-            public DoorCommand()
-            {
-                description = "Toggle the ship's door.";
-                AddShortcut("d", "door");
-            }
-
-            public override void Execute(ref Terminal terminal, string input, ref TerminalNode node)
-            {
-                GameObject.Find(StartOfRound.Instance.hangarDoorsClosed ? "StartButton" : "StopButton").GetComponentInChildren<InteractTrigger>().onInteract.Invoke(GameNetworkManager.Instance.localPlayerController);
-            }
-        }
-
-        public class LightsCommand : Command
-        {
-            public LightsCommand()
-            {
-                description = "Toggle the ship's lights.";
-                AddShortcut("l", "lights");
-            }
-
-            public override void Execute(ref Terminal terminal, string input, ref TerminalNode node)
-            {
-                StartOfRound.Instance.shipRoomLights.ToggleShipLights();
-            }
-        }
-
-        public class TeleporterCommand : Command
-        {
-            public TeleporterCommand()
-            {
-                description = "Remotely activate the teleporter.";
-            }
-
-            public override void Execute(ref Terminal terminal, string input, ref TerminalNode node)
-            {
-                foreach (ShipTeleporter teleporter in FindObjectsOfType<ShipTeleporter>())
-                {
-                    if (!teleporter.isInverseTeleporter)
-                    {
-                        if (teleporter.IsSpawned && teleporter.isActiveAndEnabled)
-                        {
-                            if (teleporter.buttonTrigger.interactable)
-                            {
-                                teleporter.PressTeleportButtonOnLocalClient();
-                                return;
-                            }
-                            ErrorResponse("The teleporter is on cooldown.", ref node);
-                            return;
-                        }
-                        ErrorResponse("The teleporter is in storage.", ref node);
-                        return;
-                    }
-                }
-                ErrorResponse("You do not own a teleporter.", ref node);
-            }
-        }
-
-        public class InverseTeleporterCommand : Command
-        {
-            public InverseTeleporterCommand()
-            {
-                description = "Remotely activate the inverse teleporter.";
-            }
-
-            public override void Execute(ref Terminal terminal, string input, ref TerminalNode node)
-            {
-                foreach (ShipTeleporter teleporter in FindObjectsOfType<ShipTeleporter>())
-                {
-                    if (teleporter.isInverseTeleporter)
-                    {
-                        if (teleporter.IsSpawned && teleporter.isActiveAndEnabled)
-                        {
-                            if (teleporter.buttonTrigger.interactable)
-                            {
-                                teleporter.PressTeleportButtonOnLocalClient();
-                                return;
-                            }
-                            ErrorResponse("The inverse teleporter is on cooldown.", ref node);
-                            return;
-                        }
-                        ErrorResponse("The inverse teleporter is in storage.", ref node);
-                        return;
-                    }
-                }
-                ErrorResponse("You do not own an inverse teleporter.", ref node);
-            }
-        }
-
-        public class ShortcutsCommand : Command
-        {
-            public ShortcutsCommand()
-            {
-                description = "View all of the shortcuts there are for commands.";
-                AddShortcut("sh", "shortcuts");
-            }
-
-            public override void Execute(ref Terminal terminal, string input, ref TerminalNode node)
-            {
-                node.displayText = "Shortcuts:";
-                foreach (string shortcut in GetShortcuts())
-                {
-                    node.displayText += "\n* >" + GetCommandIdByShortcut(shortcut).ToUpper() + "  ->  >" + shortcut.ToUpper();
-                }
-                if (node.displayText == "Shortcuts:")
-                {
-                    node.displayText += "\nThere are no shortcuts.";
-                }
-            }
-        }
-
         public class ReloadCommand : Command
         {
             public ReloadCommand()
             {
+                category = "Other";
+                id = "reload";
                 description = "Reloads the mod's config and the terminal, updating any potentially outdated information.";
             }
 
@@ -2805,10 +3032,324 @@ namespace lammOS
             }
         }
 
+        public class EjectCommand : ConfirmationCommand
+        {
+            public EjectCommand()
+            {
+                category = "Other";
+                id = "eject";
+                description = "Eject your crew into space.";
+            }
+
+            public override void Execute(ref Terminal terminal, string input, ref TerminalNode node)
+            {
+                if (StartOfRound.Instance.isChallengeFile)
+                {
+                    ErrorResponse("You are unable to be ejected on challenge moons.", ref node);
+                    return;
+                }
+                if (!StartOfRound.Instance.inShipPhase)
+                {
+                    ErrorResponse("You must be in orbit to be ejected.", ref node);
+                    return;
+                }
+                if (StartOfRound.Instance.firingPlayersCutsceneRunning)
+                {
+                    ErrorResponse("Your crew is already being ejected.", ref node);
+                    return;
+                }
+
+                if (ShowCommandConfirmationsValue)
+                {
+                    currentCommand = this;
+                    node.displayText = "Are you sure you want to eject your crew? There is no going back.\nType CONFIRM to confirm routing.";
+                    return;
+                }
+
+                StartOfRound.Instance.ManuallyEjectPlayersServerRpc();
+            }
+
+            public override void Confirmed(ref Terminal terminal, ref TerminalNode node)
+            {
+                StartOfRound.Instance.ManuallyEjectPlayersServerRpc();
+            }
+        }
+
+        public class MacrosCommand : Command
+        {
+            public MacrosCommand()
+            {
+                category = "Macros";
+                id = "macros";
+                description = "Lists all of your macros.";
+                AddShortcut("l-", id);
+            }
+
+            public override void Execute(ref Terminal terminal, string input, ref TerminalNode node)
+            {
+                node.displayText = "Your Macros:";
+                foreach (string macroId in Macros.GetMacroIds())
+                {
+                    node.displayText += "\n* " + macroId;
+                }
+                if (node.displayText == "Your Macros:")
+                {
+                    node.displayText += "\nYou have no macros, create one with the >CREATEMACRO command.";
+                }
+            }
+        }
+
+        public class RunMacroCommand : Command
+        {
+            public RunMacroCommand()
+            {
+                category = "Macros";
+                id = "runmacro";
+                description = "Run one of your macros.";
+                AddShortcut("-", id);
+                args = "[Macro]";
+            }
+
+            public override void Execute(ref Terminal terminal, string input, ref TerminalNode node)
+            {
+                if (runningMacro)
+                {
+                    ErrorResponse("You cannot run macros within macros.", ref node);
+                    return;
+                }
+
+                if (input == "")
+                {
+                    ErrorResponse("You must enter a macro id.", ref node);
+                    return;
+                }
+
+                input = input.ToLower();
+                if (!Macros.HasMacro(input))
+                {
+                    ErrorResponse("No macro exists with that id.", ref node);
+                    return;
+                }
+
+                runningMacro = true;
+                string output = ">";
+                foreach (string instruction in Macros.GetMacro(input))
+                {
+                    TerminalNode dummyNode = ScriptableObject.CreateInstance<TerminalNode>();
+                    dummyNode.displayText = "";
+                    dummyNode.clearPreviousText = true;
+                    dummyNode.terminalEvent = "";
+
+                    output += instruction;
+
+                    Instance.HandleCommand(instruction, ref terminal, ref dummyNode);
+                    dummyNode.clearPreviousText = true;
+                    Instance.HandleCommandResult(ref terminal, ref dummyNode);
+
+                    output += "\n\n" + dummyNode.displayText;
+
+                    terminal.LoadNewNode(dummyNode);
+                }
+                runningMacro = false;
+
+                node.displayText = "Executed the instructions of the macro with the id '" + input + "'. Macro output:\n\n" + output;
+            }
+        }
+
+        public class CreateMacroCommand : Command
+        {
+            public CreateMacroCommand()
+            {
+                category = "Macros";
+                id = "createmacro";
+                description = "Create a new macro.";
+                AddShortcut("c-", id);
+                args = "[Macro] [Instructions split by ';']";
+            }
+
+            public override void Execute(ref Terminal terminal, string input, ref TerminalNode node)
+            {
+                if (input == "")
+                {
+                    ErrorResponse("You must enter a macro id.", ref node);
+                    return;
+                }
+
+                int offset = input.IndexOf(' ');
+                if (offset == -1)
+                {
+                    ErrorResponse("You must enter intructions for the macro to run, each one separated by ';'.", ref node);
+                    return;
+                }
+
+                string macroId = input.Substring(0, offset).ToLower();
+                if (Macros.HasMacro(macroId))
+                {
+                    ErrorResponse("A macro already exists with that id.", ref node);
+                    return;
+                }
+
+                List<string> instructions = new(input.Substring(offset + 1).Split(';'));
+                List<string> finalInstructions = new();
+                foreach (string instruction in instructions)
+                {
+                    string trimmedInstruction = instruction.TrimStart(' ').TrimEnd(' ');
+                    if (trimmedInstruction != "")
+                    {
+                        finalInstructions.Add(trimmedInstruction);
+                    }
+                }
+
+                if (finalInstructions.Count == 0)
+                {
+                    ErrorResponse("You must enter intructions for the macro to run, each one separated by ';'.", ref node);
+                    return;
+                }
+
+                Macros.AddMacro(macroId, finalInstructions);
+                Macros.Save();
+
+                node.displayText = "Created a new macro with the id '" + macroId + "' with the following instructions:";
+                foreach (string instruction in finalInstructions)
+                {
+                    node.displayText += "\n* " + instruction;
+                }
+            }
+        }
+
+        public class InfoMacroCommand : Command
+        {
+            public InfoMacroCommand()
+            {
+                category = "Macros";
+                id = "macro";
+                description = "View the instructions that are ran for one of your macros.";
+                AddShortcut("m-", id);
+                args = "[Macro]";
+            }
+
+            public override void Execute(ref Terminal terminal, string input, ref TerminalNode node)
+            {
+                if (input == "")
+                {
+                    ErrorResponse("You must enter a macro id.", ref node);
+                    return;
+                }
+
+                input = input.ToLower();
+                if (!Macros.HasMacro(input))
+                {
+                    ErrorResponse("No macro exists with that id.", ref node);
+                    return;
+                }
+
+                node.displayText = "Macro: " + input + "\nInstructions:";
+                foreach (string instruction in Macros.GetMacro(input))
+                {
+                    node.displayText += "\n* " + instruction;
+                }
+            }
+        }
+
+        public class EditMacroCommand : Command
+        {
+            public EditMacroCommand()
+            {
+                category = "Macros";
+                id = "editmacro";
+                description = "Edit one of your macros.";
+                AddShortcut("e-", id);
+                args = "[Macro] [Instructions split by ';']";
+            }
+
+            public override void Execute(ref Terminal terminal, string input, ref TerminalNode node)
+            {
+                if (input == "")
+                {
+                    ErrorResponse("You must enter a macro id.", ref node);
+                    return;
+                }
+
+                int offset = input.IndexOf(' ');
+                if (offset == -1)
+                {
+                    ErrorResponse("You must enter intructions for the macro to run, each one separated by ';'.", ref node);
+                    return;
+                }
+
+                string macroId = input.Substring(0, offset).ToLower();
+                if (!Macros.HasMacro(macroId))
+                {
+                    ErrorResponse("No macro exists with that id.", ref node);
+                    return;
+                }
+
+                List<string> instructions = new(input.Substring(offset + 1).Split(';'));
+                List<string> finalInstructions = new();
+                foreach (string instruction in instructions)
+                {
+                    string trimmedInstruction = instruction.TrimStart(' ').TrimEnd(' ');
+                    if (trimmedInstruction != "")
+                    {
+                        finalInstructions.Add(trimmedInstruction);
+                    }
+                }
+
+                if (finalInstructions.Count == 0)
+                {
+                    ErrorResponse("You must enter intructions for the macro to run, each one separated by ';'.", ref node);
+                    return;
+                }
+
+                Macros.ModifyMacro(macroId, finalInstructions);
+                Macros.Save();
+
+                node.displayText = "Edited the macro with the id '" + macroId + "' giving it the new instructions:";
+                foreach (string instruction in finalInstructions)
+                {
+                    node.displayText += "\n* " + instruction;
+                }
+            }
+        }
+
+        public class DeleteMacroCommand : Command
+        {
+            public DeleteMacroCommand()
+            {
+                category = "Macros";
+                id = "deletemacro";
+                description = "Delete one of your macros.";
+                AddShortcut("d-", id);
+                args = "[Macro]";
+            }
+
+            public override void Execute(ref Terminal terminal, string input, ref TerminalNode node)
+            {
+                if (input == "")
+                {
+                    ErrorResponse("You must enter a macro id.", ref node);
+                    return;
+                }
+
+                input = input.ToLower();
+                if (!Macros.HasMacro(input))
+                {
+                    ErrorResponse("No macro exists with that id.", ref node);
+                    return;
+                }
+
+                Macros.RemoveMacro(input);
+                Macros.Save();
+
+                node.displayText = "Deleted the macro with the id '" + input + "'.";
+            }
+        }
+
         public class DebugCommand : Command
         {
             public DebugCommand()
             {
+                id = "debug";
                 description = "A debug command, how did you find this?";
                 hidden = true;
             }
@@ -2901,7 +3442,6 @@ namespace lammOS
                                     break;
                                 }
                             }
-                            terminal.useCreditsCooldown = true;
                             terminal.groupCredits = Mathf.Min(money, 10000000);
                             terminal.SyncGroupCreditsServerRpc(terminal.groupCredits, terminal.numberOfItemsInDropship);
                             break;
@@ -3070,11 +3610,9 @@ namespace lammOS
 
         public class CodeCommand : Command
         {
-            public string code;
-
             public CodeCommand(string alphanumericCode)
             {
-                code = alphanumericCode;
+                id = alphanumericCode;
                 description = "An alphanumeric code command.";
                 hidden = true;
             }
@@ -3084,7 +3622,7 @@ namespace lammOS
                 TerminalAccessibleObject[] array = FindObjectsOfType<TerminalAccessibleObject>();
                 for (int i = 0; i < array.Length; i++)
                 {
-                    if (array[i].objectCode == code)
+                    if (array[i].objectCode == id)
                     {
                         array[i].CallFunctionFromTerminal();
                     }
@@ -3095,8 +3633,45 @@ namespace lammOS
             }
         }
 
+        public class DummyCommand : Command
+        {
+            public DummyCommand(string category, string id, string description, string args = "")
+            {
+                this.category = category;
+                this.id = id;
+                this.description = description;
+                this.args = args;
+            }
+
+            public override void Execute(ref Terminal terminal, string input, ref TerminalNode node)
+            {
+                
+            }
+        }
+
+        abstract public class ConfirmationCommand : Command
+        {
+            public abstract void Confirmed(ref Terminal terminal, ref TerminalNode node);
+
+            internal static void Handle(string input, ref Terminal terminal, ref TerminalNode node)
+            {
+                if ("confirm".StartsWith(input))
+                {
+                    if (currentCommand.CheckNotEnoughChars(input.Length, 7, ref node))
+                    {
+                        return;
+                    }
+                    (currentCommand as ConfirmationCommand).Confirmed(ref terminal, ref node);
+                    return;
+                }
+                node.displayText = ">";
+            }
+        }
+
         abstract public class Command
         {
+            public string category = "Uncategorized";
+            public string id { get; internal set; } = "";
             public string description = "";
             public string args = "";
             public bool hidden = false;
@@ -3117,6 +3692,44 @@ namespace lammOS
             }
 
             public abstract void Execute(ref Terminal terminal, string input, ref TerminalNode node);
+
+            internal static void Handle(string commandId, string input, ref Terminal terminal, ref TerminalNode node)
+            {
+                if (IsShortcut(commandId))
+                {
+                    commandId = GetCommandIdByShortcut(commandId);
+                    if (!runningMacro)
+                    {
+                        terminal.screenText.text = terminal.screenText.text.Substring(0, terminal.screenText.text.Length - terminal.textAdded) + commandId;
+                        if (input != "")
+                        {
+                            terminal.screenText.text += " " + input;
+                        }
+                    }
+                }
+
+                Command command = GetCommand(commandId);
+                if (command == null)
+                {
+                    node.displayText = "Unknown command: '" + commandId + "'\n\n>";
+                    node.playSyncedClip = terminalSyncedSounds["error"];
+                    return;
+                }
+
+                try
+                {
+                    command.Execute(ref terminal, input, ref node);
+                }
+                catch (Exception e)
+                {
+                    node = ScriptableObject.CreateInstance<TerminalNode>();
+                    node.displayText = "An error occurred executing the command: '" + commandId + "'\n\n>";
+                    node.clearPreviousText = true;
+                    node.terminalEvent = "";
+                    node.playSyncedClip = terminalSyncedSounds["error"];
+                    Logger.LogError("An error occurred executing the command: '" + commandId + "'\n" + e.ToString());
+                }
+            }
         }
 
         [Serializable]
@@ -3136,7 +3749,7 @@ namespace lammOS
             internal SyncedConfig()
             {
                 Instance = this;
-                Config = new(Utility.CombinePaths(Paths.ConfigPath, "lammas123.lammOS.Synced" + ".cfg"), false, MetadataHelper.GetMetadata(lammOS.Instance));
+                Config = new(Utility.CombinePaths(Paths.ConfigPath, "lammas123.lammOS.Synced.cfg"), false, MetadataHelper.GetMetadata(lammOS.Instance));
             }
 
             internal static void SetValues()
@@ -3282,6 +3895,181 @@ namespace lammOS
                     Logger.LogError($"Error deserializing instance: {e}");
                     return default;
                 }
+            }
+        }
+
+        public class Macros
+        {
+            internal static Dictionary<string, List<string>> macros = new();
+
+            public static bool AddMacro(string id, List<string> inputs)
+            {
+                if (HasMacro(id))
+                {
+                    return false;
+                }
+                macros.Add(id, new List<string>(inputs));
+                return true;
+            }
+            public static bool HasMacro(string id)
+            {
+                return macros.ContainsKey(id);
+            }
+            public static List<string> GetMacro(string id)
+            {
+                if (!HasMacro(id))
+                {
+                    return null;
+                }
+                return new List<string>(macros[id]);
+            }
+            public static List<string> GetMacroIds()
+            {
+                return new List<string>(macros.Keys);
+            }
+            public static bool ModifyMacro(string id, List<string> inputs)
+            {
+                if (!HasMacro(id))
+                {
+                    return false;
+                }
+                macros[id] = new List<string>(inputs);
+                return true;
+            }
+            public static bool RemoveMacro(string id)
+            {
+                if (!HasMacro(id))
+                {
+                    return false;
+                }
+                macros.Remove(id);
+                return true;
+            }
+
+            public static void Save()
+            {
+                ES3.Save("lammOS_Macros", macros, Utility.CombinePaths(Paths.ConfigPath, "lammas123.lammOS.Macros.es3"));
+            }
+            public static void Load()
+            {
+                if (File.Exists(Utility.CombinePaths(Paths.ConfigPath, "lammas123.lammOS.Macros.es3")))
+                {
+                    macros = ES3.Load<Dictionary<string, List<string>>>("lammOS_Macros", Utility.CombinePaths(Paths.ConfigPath, "lammas123.lammOS.Macros.es3"));
+                    return;
+                }
+
+                macros = new();
+                Save();
+            }
+        }
+
+        internal class Keybinds : LcInputActions
+        {
+            [InputAction("<Keyboard>/leftArrow", Name = "Previous Radar Target")]
+            public InputAction PreviousRadarTargetKey { get; set; }
+            [InputAction("<Keyboard>/rightArrow", Name = "Next Radar Target")]
+            public InputAction NextRadarTargetKey { get; set; }
+
+            [InputAction("<Keyboard>/upArrow", Name = "Previous Command History")]
+            public InputAction PreviousCommandHistoryKey { get; set; }
+            [InputAction("<Keyboard>/downArrow", Name = "Next Command History")]
+            public InputAction NextCommandHistoryKey { get; set; }
+
+            public static Keybinds Instance;
+            public static bool isSetup = false;
+
+            public static void Setup()
+            {
+                if (isSetup)
+                {
+                    return;
+                }
+                isSetup = true;
+
+                Instance = new Keybinds();
+                Instance.PreviousRadarTargetKey.performed += OnPreviousRadarTargetKeyPressed;
+                Instance.NextRadarTargetKey.performed += OnNextRadarTargetKeyPressed;
+                Instance.PreviousCommandHistoryKey.performed += OnPreviousCommandHistoryKeyPressed;
+                Instance.NextCommandHistoryKey.performed += OnNextCommandHistoryKeyPressed;
+            }
+
+            public static void OnPreviousRadarTargetKeyPressed(InputAction.CallbackContext context)
+            {
+                if (!GameNetworkManager.Instance.localPlayerController.inTerminalMenu)
+                {
+                    return;
+                }
+                int index = StartOfRound.Instance.mapScreen.targetTransformIndex - 1;
+                for (int i = 0; i < StartOfRound.Instance.mapScreen.radarTargets.Count; i++)
+                {
+                    if (index == -1)
+                    {
+                        index = StartOfRound.Instance.mapScreen.radarTargets.Count - 1;
+                    }
+
+                    if (StartOfRound.Instance.mapScreen.radarTargets[index] == null)
+                    {
+                        index--;
+                        continue;
+                    }
+                    if (StartOfRound.Instance.mapScreen.radarTargets[index].isNonPlayer)
+                    {
+                        break;
+                    }
+
+                    PlayerControllerB component = StartOfRound.Instance.mapScreen.radarTargets[index].transform.gameObject.GetComponent<PlayerControllerB>();
+                    if (component == null || !component.isPlayerControlled || component.isPlayerDead || component.redirectToEnemy != null)
+                    {
+                        index--;
+                        continue;
+                    }
+                    break;
+                }
+                
+                StartOfRound.Instance.mapScreen.SwitchRadarTargetAndSync(index);
+            }
+            public static void OnNextRadarTargetKeyPressed(InputAction.CallbackContext context)
+            {
+                if (GameNetworkManager.Instance.localPlayerController.inTerminalMenu)
+                {
+                    StartOfRound.Instance.mapScreen.SwitchRadarTargetAndSync((StartOfRound.Instance.mapScreen.targetTransformIndex + 1) % StartOfRound.Instance.mapScreen.radarTargets.Count);
+                }
+            }
+
+            public static void OnPreviousCommandHistoryKeyPressed(InputAction.CallbackContext context)
+            {
+                if (!GameNetworkManager.Instance.localPlayerController.inTerminalMenu || commandHistoryIndex == 0 || commandHistory.Count == 0)
+                {
+                    return;
+                }
+
+                Terminal terminal = FindObjectOfType<Terminal>();
+                if (commandHistoryIndex == -1)
+                {
+                    lastTypedCommand = terminal.screenText.text.Substring(terminal.screenText.text.Length - terminal.textAdded);
+                    commandHistoryIndex = commandHistory.Count;
+                }
+
+                commandHistoryIndex--;
+                terminal.screenText.text = terminal.screenText.text.Substring(0, terminal.screenText.text.Length - terminal.textAdded) + commandHistory[commandHistoryIndex];
+            }
+            public static void OnNextCommandHistoryKeyPressed(InputAction.CallbackContext context)
+            {
+                if (!GameNetworkManager.Instance.localPlayerController.inTerminalMenu || commandHistoryIndex == -1)
+                {
+                    return;
+                }
+                commandHistoryIndex++;
+
+                Terminal terminal = FindObjectOfType<Terminal>();
+                if (commandHistoryIndex == commandHistory.Count)
+                {
+                    commandHistoryIndex = -1;
+                    terminal.screenText.text = terminal.screenText.text.Substring(0, terminal.screenText.text.Length - terminal.textAdded) + lastTypedCommand;
+                    return;
+                }
+
+                terminal.screenText.text = terminal.screenText.text.Substring(0, terminal.screenText.text.Length - terminal.textAdded) + commandHistory[commandHistoryIndex];
             }
         }
     }
