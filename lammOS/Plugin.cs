@@ -14,10 +14,11 @@ using Unity.Collections;
 using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.InputSystem;
+using UnityEngine.UI;
 
 namespace lammOS
 {
-    [BepInPlugin("lammas123.lammOS", "lammOS", "1.2.0")]
+    [BepInPlugin("lammas123.lammOS", "lammOS", "1.2.1")]
     [BepInDependency("com.rune580.LethalCompanyInputUtils", MinimumDependencyVersion: "0.6.0")]
     public class lammOS : BaseUnityPlugin
     {
@@ -76,6 +77,8 @@ namespace lammOS
         internal static GameObject Clock;
         internal static TextMeshProUGUI ClockText => Clock.GetComponent<TextMeshProUGUI>();
 
+        internal static RawImage ricksHelmetCameraImage = null;
+
         internal void Awake()
         {
             Instance = this;
@@ -106,7 +109,14 @@ namespace lammOS
             AddCommand(new SwitchCommand());
             AddCommand(new PingCommand());
             AddCommand(new FlashCommand());
+            AddCommand(new DummyCommand("Radar", "code", "Interact with objects on the radar map by typing in their alphanumeric code. Enter 'help code-[argument]' for more details on what an argument does.", "(Default/Toggle/Deactivate/Activate)"));
+            AddCommand(new DummyCommand("Radar", "code-default", "Default functionality of toggling the state of doors and disabling landmines and turrets on the radar map.", "", true, true));
+            AddCommand(new DummyCommand("Radar", "code-toggle", "Specifically only toggles the state of doors on the radar map.", "", true, false));
+            AddCommand(new DummyCommand("Radar", "code-deactivate", "Specifically only deactivate mines and turrets with this code.", "", true, false));
+            AddCommand(new DummyCommand("Radar", "code-activate", "Specifically only activate mines and turrets with this code, causing them to explode or go haywire. The Company does not recommend using this option.", "", true, false));
 
+            AddCommand(new LandCommand());
+            AddCommand(new LaunchCommand());
             AddCommand(new DoorCommand());
             AddCommand(new LightsCommand());
             AddCommand(new TeleporterCommand());
@@ -561,6 +571,11 @@ namespace lammOS
                 {
                     if (StartOfRound.Instance.unlockablesList.unlockables[i].unlockableName.ToLower().Replace("-", " ").StartsWith(terminalKeywords["buy"].compatibleNouns[j].noun.word.Replace("-", " ")))
                     {
+                        if (purchaseableUnlockables.ContainsKey(terminalKeywords["buy"].compatibleNouns[j].result.creatureName.ToLower()))
+                        {
+                            Logger.LogWarning("A purchaseable unlockable has already been added with the name: '" + terminalKeywords["buy"].compatibleNouns[j].result.creatureName.ToLower() + "'");
+                            continue;
+                        }
                         purchaseableUnlockables.Add(terminalKeywords["buy"].compatibleNouns[j].result.creatureName.ToLower(), new PurchaseableUnlockable(i, j));
                         foundMatch = true;
                         break;
@@ -1256,6 +1271,40 @@ namespace lammOS
                     node.displayText = helpNodeText;
                     helpNodeText = "";
                 }
+
+                GameObject ricksHelmetCameraObject = GameObject.Find("HelmetCamera");
+                if (ricksHelmetCameraObject == null)
+                {
+                    return;
+                }
+
+                if (__instance.terminalImage.enabled)
+                {
+                    Camera ricksHelmetCamera = ricksHelmetCameraObject.GetComponent<Camera>();
+                    if (ricksHelmetCamera == null)
+                    {
+                        return;
+                    }
+
+                    if (ricksHelmetCameraImage == null)
+                    {
+                        ricksHelmetCameraImage = Instantiate(__instance.terminalImage, __instance.terminalImage.transform.parent);
+                        __instance.terminalImage.transform.localScale = new Vector3(0.5f, 0.5f, 1f);
+                        __instance.terminalImage.transform.localPosition = new Vector3(__instance.terminalImage.transform.localPosition.x + 100, __instance.terminalImage.transform.localPosition.y + 75, __instance.terminalImage.transform.localPosition.z);
+
+                        ricksHelmetCameraImage.transform.localScale = new Vector3(0.5f, 0.5f, 1f);
+                        ricksHelmetCameraImage.transform.localPosition = new Vector3(ricksHelmetCameraImage.transform.localPosition.x + 100, ricksHelmetCameraImage.transform.localPosition.y - 75, ricksHelmetCameraImage.transform.localPosition.z);
+                    }
+
+                    ricksHelmetCameraImage.enabled = true;
+                    ricksHelmetCameraImage.texture = ricksHelmetCamera.targetTexture;
+                    return;
+                }
+
+                if (ricksHelmetCameraImage != null)
+                {
+                    ricksHelmetCameraImage.enabled = false;
+                }
             }
 
             [HarmonyPatch("BeginUsingTerminal")]
@@ -1263,6 +1312,7 @@ namespace lammOS
             [HarmonyPriority(2147483647)]
             public static void PreBeginUsingTerminal()
             {
+                currentCommand = null;
                 commandHistoryIndex = -1;
             }
 
@@ -1271,7 +1321,7 @@ namespace lammOS
             [HarmonyPriority(-2147483648)]
             public static void PostTextChanged(ref Terminal __instance)
             {
-                if (commandHistoryIndex != -1 && commandHistory[commandHistoryIndex] != __instance.screenText.text.Substring(__instance.screenText.text.Length - __instance.textAdded))
+                if (commandHistoryIndex != -1 && commandHistory[commandHistoryIndex] != __instance.screenText.text.Substring(Math.Max(0, __instance.screenText.text.Length - __instance.textAdded)))
                 {
                     commandHistoryIndex = -1;
                 }
@@ -1378,6 +1428,17 @@ namespace lammOS
 
                 return true;
             }
+
+            [HarmonyPatch("SwitchMapMonitorPurpose")]
+            [HarmonyPostfix]
+            [HarmonyPriority(-2147483648)]
+            public static void PostSwitchMapMonitorPurpose(ref bool displayInfo)
+            {
+                if (displayInfo && ricksHelmetCameraImage != null)
+                {
+                    ricksHelmetCameraImage.enabled = false;
+                }
+            }
         }
 
         [HarmonyPatch(typeof(HUDManager))]
@@ -1441,6 +1502,10 @@ namespace lammOS
 
                     foreach (Command command in categories[category])
                     {
+                        if (!command.enabled)
+                        {
+                            node.displayText += "DISABLED ";
+                        }
                         node.displayText += ">" + command.id.ToUpper();
                         if (command.args != "")
                         {
@@ -1452,7 +1517,13 @@ namespace lammOS
             }
             public void GenerateCommandHelp(string commandId, Command command, ref TerminalNode node)
             {
-                node.displayText = " [" + command.category + "]\n>" + commandId.ToUpper();
+                node.displayText = " [" + command.category + "]\n";
+                if (!command.enabled)
+                {
+                    node.displayText += "DISABLED ";
+                }
+                node.displayText += ">" + commandId.ToUpper();
+
                 if (command.args != "")
                 {
                     node.displayText += " " + command.args;
@@ -2591,16 +2662,8 @@ namespace lammOS
 
             public override void Execute(ref Terminal terminal, string input, ref TerminalNode node)
             {
-                foreach (CompatibleNoun cn in terminalKeywords["view"].compatibleNouns)
-                {
-                    if (cn.noun.word == "monitor")
-                    {
-                        node.displayTexture = cn.result.displayTexture;
-                        node.persistentImage = cn.result.persistentImage;
-                        return;
-                    }
-                }
-                ErrorResponse("Failed to view monitor.", ref node);
+                node.displayTexture = StartOfRound.Instance.mapScreen.cam.targetTexture;
+                node.persistentImage = true;
             }
         }
 
@@ -2773,6 +2836,134 @@ namespace lammOS
                     return;
                 }
                 StartOfRound.Instance.mapScreen.FlashRadarBooster(target);
+            }
+        }
+
+        public class LandCommand : ConfirmationCommand
+        {
+            public LandCommand()
+            {
+                category = "Interactive";
+                id = "land";
+                description = "Lands the ship on the moon you are currently orbiting.";
+            }
+
+            public override void Execute(ref Terminal terminal, string input, ref TerminalNode node)
+            {
+                if (ShowCommandConfirmationsValue)
+                {
+                    currentCommand = this;
+                    node.displayText = "Would you like to pull the lever to land on " + StartOfRound.Instance.currentLevel.PlanetName + "?\nType CONFIRM to confirm landing.";
+                    return;
+                }
+
+                Land(ref terminal, ref node);
+            }
+
+            public void Land(ref Terminal terminal, ref TerminalNode node)
+            {
+                if (StartOfRound.Instance.travellingToNewLevel)
+                {
+                    ErrorResponse("The ship is currently routing to another moon.", ref node);
+                    return;
+                }
+                if (StartOfRound.Instance.shipHasLanded)
+                {
+                    ErrorResponse("The ship is already on the moon.", ref node);
+                    return;
+                }
+                if (!GameNetworkManager.Instance.gameHasStarted && !GameNetworkManager.Instance.isHostingGame)
+                {
+                    ErrorResponse("The host must be the one to land the ship at the start of the game.", ref node);
+                    return;
+                }
+
+                StartMatchLever lever = FindObjectOfType<StartMatchLever>();
+                if (lever.leverHasBeenPulled)
+                {
+                    ErrorResponse("The lever has already been pulled.", ref node);
+                    return;
+                }
+                if (!lever.triggerScript.interactable)
+                {
+                    ErrorResponse("The lever cannot currently be pulled.", ref node);
+                    return;
+                }
+
+                lever.LeverAnimation();
+                lever.PullLever();
+                node.displayText = "Pulling the lever to land on " + StartOfRound.Instance.currentLevel.PlanetName + "...";
+            }
+
+            public override void Confirmed(ref Terminal terminal, ref TerminalNode node)
+            {
+                node.clearPreviousText = false;
+
+                Land(ref terminal, ref node);
+            }
+        }
+
+        public class LaunchCommand : ConfirmationCommand
+        {
+            public LaunchCommand()
+            {
+                category = "Interactive";
+                id = "launch";
+                description = "Launches the ship into orbit around the moon it is currently on.";
+            }
+
+            public override void Execute(ref Terminal terminal, string input, ref TerminalNode node)
+            {
+                if (ShowCommandConfirmationsValue)
+                {
+                    currentCommand = this;
+                    node.displayText = "Would you like to pull the lever to launch into orbit?\nType CONFIRM to confirm landing.";
+                    return;
+                }
+
+                Launch(ref terminal, ref node);
+            }
+
+            public void Launch(ref Terminal terminal, ref TerminalNode node)
+            {
+                if (StartOfRound.Instance.travellingToNewLevel)
+                {
+                    ErrorResponse("The ship is currently routing to another moon.", ref node);
+                    return;
+                }
+                if (!StartOfRound.Instance.shipHasLanded)
+                {
+                    ErrorResponse("The ship is either still landing, already in orbit, or currently leaving the moon.", ref node);
+                    return;
+                }
+                if (!GameNetworkManager.Instance.gameHasStarted && !GameNetworkManager.Instance.isHostingGame)
+                {
+                    ErrorResponse("The host must be the one to land the ship at the start of the game.", ref node);
+                    return;
+                }
+
+                StartMatchLever lever = FindObjectOfType<StartMatchLever>();
+                if (!lever.leverHasBeenPulled)
+                {
+                    ErrorResponse("The lever has already been pulled.", ref node);
+                    return;
+                }
+                if (!lever.triggerScript.interactable)
+                {
+                    ErrorResponse("The lever cannot currently be pulled.", ref node);
+                    return;
+                }
+
+                lever.LeverAnimation();
+                lever.PullLever();
+                node.displayText = "Pulling the lever to launch into orbit...";
+            }
+
+            public override void Confirmed(ref Terminal terminal, ref TerminalNode node)
+            {
+                node.clearPreviousText = false;
+
+                Launch(ref terminal, ref node);
             }
         }
 
@@ -3612,20 +3803,109 @@ namespace lammOS
         {
             public CodeCommand(string alphanumericCode)
             {
+                category = "Alphanumeric Codes";
                 id = alphanumericCode;
                 description = "An alphanumeric code command.";
+                args = commands["code"].args;
                 hidden = true;
             }
 
             public override void Execute(ref Terminal terminal, string input, ref TerminalNode node)
             {
-                TerminalAccessibleObject[] array = FindObjectsOfType<TerminalAccessibleObject>();
-                for (int i = 0; i < array.Length; i++)
+                string action = "default";
+                if (input != "")
                 {
-                    if (array[i].objectCode == id)
+                    input = input.ToLower();
+                    List<string> actions = new()
                     {
-                        array[i].CallFunctionFromTerminal();
+                        "default",
+                        "toggle",
+                        "deactivate",
+                        "activate"
+                    };
+
+                    foreach (string a in actions)
+                    {
+                        if (a.ToLower().StartsWith(input))
+                        {
+                            action = a;
+                            break;
+                        }
                     }
+                    if (action != "toggle" && CheckNotEnoughChars(input.Length, action.Length, ref node))
+                    {
+                        return;
+                    }
+                }
+                if (!commands["code-" + action].enabled)
+                {
+                    ErrorResponse("That type of action is not enabled by the host.", ref node);
+                    return;
+                }
+
+                TerminalAccessibleObject[] objects = FindObjectsOfType<TerminalAccessibleObject>();
+                switch (action)
+                {
+                    case "default":
+                        {
+                            foreach (TerminalAccessibleObject obj in objects)
+                            {
+                                if (obj.objectCode == id)
+                                {
+                                    obj.CallFunctionFromTerminal();
+                                }
+                            }
+                            break;
+                        }
+                    case "toggle":
+                        {
+                            foreach (TerminalAccessibleObject obj in objects)
+                            {
+                                if (obj.objectCode == id && obj.isBigDoor)
+                                {
+                                    obj.CallFunctionFromTerminal();
+                                }
+                            }
+                            break;
+                        }
+                    case "deactivate":
+                        {
+                            foreach (TerminalAccessibleObject obj in objects)
+                            {
+                                if (obj.objectCode == id && !obj.isBigDoor)
+                                {
+                                    obj.CallFunctionFromTerminal();
+                                }
+                            }
+                            break;
+                        }
+                    case "activate":
+                        {
+                            Landmine[] landmines = FindObjectsOfType<Landmine>();
+                            Turret[] turrets = FindObjectsOfType<Turret>();
+                            foreach (TerminalAccessibleObject obj in objects)
+                            {
+                                if (obj.objectCode == id && !obj.isBigDoor)
+                                {
+                                    foreach (Landmine landmine in landmines)
+                                    {
+                                        if (landmine.NetworkObjectId == obj.NetworkObjectId)
+                                        {
+                                            ((IHittable)landmine).Hit(0, Vector3.zero);
+                                        }
+                                    }
+
+                                    foreach (Turret turret in turrets)
+                                    {
+                                        if (turret.NetworkObjectId == obj.NetworkObjectId && turret.turretMode != TurretMode.Berserk)
+                                        {
+                                            ((IHittable)turret).Hit(0, Vector3.zero);
+                                        }
+                                    }
+                                }
+                            }
+                            break;
+                        }
                 }
 
                 terminal.codeBroadcastAnimator.SetTrigger("display");
@@ -3635,12 +3915,14 @@ namespace lammOS
 
         public class DummyCommand : Command
         {
-            public DummyCommand(string category, string id, string description, string args = "")
+            public DummyCommand(string category, string id, string description, string args = "", bool hidden = false, bool enabled = true)
             {
                 this.category = category;
                 this.id = id;
                 this.description = description;
                 this.args = args;
+                this.hidden = hidden;
+                defaultEnabled = enabled;
             }
 
             public override void Execute(ref Terminal terminal, string input, ref TerminalNode node)
@@ -3675,6 +3957,13 @@ namespace lammOS
             public string description = "";
             public string args = "";
             public bool hidden = false;
+            internal bool defaultEnabled = true;
+            public bool enabled {
+                get
+                {
+                    return SyncedConfig.Instance.EnabledCommands.ContainsKey(id) ? SyncedConfig.Instance.EnabledCommands[id] : defaultEnabled;
+                }
+            }
 
             public void ErrorResponse(string response, ref TerminalNode node)
             {
@@ -3715,6 +4004,11 @@ namespace lammOS
                     node.playSyncedClip = terminalSyncedSounds["error"];
                     return;
                 }
+                if (!command.enabled)
+                {
+                    command.ErrorResponse("That command is disabled by the host.\n\n>", ref node);
+                    return;
+                }
 
                 try
                 {
@@ -3738,6 +4032,8 @@ namespace lammOS
             public static readonly int DefaultMaxDropshipItems = 12;
             public int MaxDropshipItemsValue { get; internal set; }
             internal static ConfigEntry<int> MaxDropshipItems;
+
+            internal Dictionary<string, bool> EnabledCommands;
 
             internal Dictionary<string, float> MoonPriceMultipliers;
             internal Dictionary<string, float> ItemPriceMultipliers;
@@ -3763,23 +4059,28 @@ namespace lammOS
                     Config.Clear();
                 }
 
-                MaxDropshipItems = Config.Bind("Synced - General", "MaxDropshipItems", DefaultMaxDropshipItems, "The maximum amount of items the dropship can have in it at a time.");
+                MaxDropshipItems = Config.Bind("Synced", "MaxDropshipItems", DefaultMaxDropshipItems, "The maximum amount of items the dropship can have in it at a time.");
                 if (MaxDropshipItems.Value < 1)
                 {
                     MaxDropshipItems.Value = 1;
                 }
                 Instance.MaxDropshipItemsValue = MaxDropshipItems.Value;
 
-                Instance.MoonPriceMultipliers = new();
-                Instance.ItemPriceMultipliers = new();
-                Instance.UnlockablePriceMultipliers = new();
+                Instance.EnabledCommands = new();
+                foreach (Command command in GetCommands())
+                {
+                    ConfigEntry<bool> enabled = Config.Bind("Synced - Enabled Commands", command.id + "_Enabled", command.enabled);
+                    Instance.EnabledCommands.Add(command.id, enabled.Value);
+                }
 
+                Instance.MoonPriceMultipliers = new();
                 foreach (string moonId in moons.Keys)
                 {
                     ConfigEntry<float> priceMultiplier = Config.Bind("Synced - Moon Price Multipliers", moonId + "_PriceMultiplier", moons[moonId].GetNode().itemCost == 0 ? 0f : 1f);
                     Instance.MoonPriceMultipliers.Add(moonId, priceMultiplier.Value >= 0 ? priceMultiplier.Value : 0);
                 }
 
+                Instance.ItemPriceMultipliers = new();
                 foreach (string itemId in purchaseableItems.Keys)
                 {
                     Terminal terminal = FindObjectOfType<Terminal>();
@@ -3787,6 +4088,7 @@ namespace lammOS
                     Instance.ItemPriceMultipliers.Add(itemId, priceMultiplier.Value >= 0 ? priceMultiplier.Value : 0);
                 }
 
+                Instance.UnlockablePriceMultipliers = new();
                 foreach (string unlockableId in purchaseableUnlockables.Keys)
                 {
                     ConfigEntry<float> priceMultiplier = Config.Bind("Synced - Unlockable Price Multipliers", unlockableId + "_PriceMultiplier", purchaseableUnlockables[unlockableId].GetNode().itemCost == 0 ? 0f : 1f);
@@ -3805,6 +4107,7 @@ namespace lammOS
                 }
 
                 Instance.MaxDropshipItemsValue = DefaultMaxDropshipItems;
+                Instance.EnabledCommands = new();
                 Instance.MoonPriceMultipliers = new();
                 Instance.ItemPriceMultipliers = new();
                 Instance.UnlockablePriceMultipliers = new();
@@ -3860,6 +4163,7 @@ namespace lammOS
             internal static void SyncWithHost(SyncedConfig newConfig)
             {
                 Instance.MaxDropshipItemsValue = newConfig.MaxDropshipItemsValue;
+                Instance.EnabledCommands = newConfig.EnabledCommands;
                 Instance.MoonPriceMultipliers = newConfig.MoonPriceMultipliers;
                 Instance.ItemPriceMultipliers = newConfig.ItemPriceMultipliers;
                 Instance.UnlockablePriceMultipliers = newConfig.UnlockablePriceMultipliers;
