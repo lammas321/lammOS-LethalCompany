@@ -50,9 +50,9 @@ I also pre-patched the Terminal.TextPostProcess method to do nothing by default,
 - A synced config to allow you to change the maximum amount of items on the delivery dropship, as well as change the prices for every moon, item, and unlockable.
 
 ## What's Planned
+- Fixing a potential error that could occur if modded planets don't follow the same naming scheme that vanilla ones do. This hasn't been a problem quite yet but it is something I'm aware of.
 - Fixing the possibility of any desyncing or inconsistencies occuring caused by other mods, so that the `>RELOAD` command doesn't need to be used.
 - Showing the entity's base health when viewing one using the `>BESTIARY` command.
-- Being able to use a walkie talkie while on the terminal. Like [TermSpeak by KodiCraft](https://thunderstore.io/c/lethal-company/p/KodiCraft/TermSpeak/)
 
 ## Known Incompatibilities
 - [Advanced Company by PotatoePet](https://thunderstore.io/c/lethal-company/p/PotatoePet/AdvancedCompany/)
@@ -63,6 +63,19 @@ I also pre-patched the Terminal.TextPostProcess method to do nothing by default,
 - @lammas123 on Discord - [Lethal Company Modding Discord](https://discord.com/invite/lcmod) - [lammOS Thread](https://discord.com/channels/1168655651455639582/1196941743673847938)
 
 # Changelog
+## 1.2.1
+- Added an `enabled` property to all commands that is set to true by default. Though some commands, like a few I am adding in this update, will be disabled by default.
+  - Additionally, I've added a section to the Synced config for commands to be to set as enabled or disabled by the host.
+- Added the `>LAND` and `>LAUNCH` commands to the Interactive help category as confirmation commands, meaning they depend on the ShowCommandConfirmations config option.
+- Added the `>CODE` command to the Radar help category as a visual command. Typing 'code' or 'code b2' won't do anything, but typing 'b2' as usual will interact with objects on the radar map.
+- Added the optional arguments default, toggle, deactivate, and activate to the alphanumeric code commands, with default just being normal functionality.
+  - The toggle argument is disabled by default, but will only toggle door's open or closed states with the entered code.
+  - The deactivate argument is disabled by default, but will only deactivate mines and turrets with the entered code.
+  - The activate argument is disabled by default, but will trigger mines to detonate and turrets to go haywire with the entered code.
+- If the [Helmet_Cameras mod by RickArg](https://thunderstore.io/c/lethal-company/p/RickArg/Helmet_Cameras/) is on, using the `>MONITOR` command will show both the map and radar target's helmet camera on the terminal side by side.
+- Fixed an error that could occur if the amount of text you typed into the terminal was longer than the amount of text output by a command after submitting it, this error didn't cause any problems as far as I could tell.
+- Patched an error that could occur if more than a single unlockable with the same name existed were added, causing lots of functionality with lammOS to break. This was seemingly caused by some additional suit mods.
+
 ## 1.2.0
 - Added a command category feature, which sorts terminal commands into categories (based on what it does or what mod added it) in the `>HELP` command's response.
 - Slightly modified how commands are added/registered with the mod, as well as how commands are handled.
