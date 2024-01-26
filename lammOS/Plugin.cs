@@ -18,7 +18,7 @@ using UnityEngine.UI;
 
 namespace lammOS
 {
-    [BepInPlugin("lammas123.lammOS", "lammOS", "1.2.2")]
+    [BepInPlugin("lammas123.lammOS", "lammOS", "1.2.3")]
     [BepInDependency("com.rune580.LethalCompanyInputUtils", MinimumDependencyVersion: "0.6.0")]
     public class lammOS : BaseUnityPlugin
     {
@@ -240,45 +240,56 @@ namespace lammOS
         public static int GetMoonCost(string moonId)
         {
             float multiplier = SyncedConfig.Instance.MoonPriceMultipliers.TryGetValue(moonId, out float value) ? value : -1f;
+            int cost = moons[moonId].GetNode().itemCost;
             if (multiplier == -1)
             {
-                return moons[moonId].GetNode().itemCost;
+                return cost;
             }
-            if (moons[moonId].GetNode().itemCost == 0)
+            if (cost == 0)
             {
                 return (int)multiplier;
             }
-            return (int)(moons[moonId].GetNode().itemCost * multiplier);
+            return (int)(cost * multiplier);
         }
         public static int GetItemCost(string itemId, bool includeSale = false)
         {
             float multiplier = SyncedConfig.Instance.ItemPriceMultipliers.TryGetValue(itemId, out float value) ? value : -1f;
+            int cost = purchasableItems[itemId].GetItem(ref Terminal).creditsWorth;
             if (multiplier == -1)
             {
-                return purchasableItems[itemId].GetItem(ref Terminal).creditsWorth;
+                if (includeSale)
+                {
+                    return (int)(cost * purchasableItems[itemId].GetSalePercentage(ref Terminal) / 100f);
+                }
+                return cost;
             }
-            if (purchasableItems[itemId].GetItem(ref Terminal).creditsWorth == 0)
+            if (cost == 0)
             {
+                if (includeSale)
+                {
+                    return (int)(multiplier * purchasableItems[itemId].GetSalePercentage(ref Terminal) / 100f);
+                }
                 return (int)multiplier;
             }
             if (includeSale)
             {
-                multiplier *= purchasableItems[itemId].GetSalePercentage(ref Terminal) / 100f;
+                return (int)(cost * multiplier * purchasableItems[itemId].GetSalePercentage(ref Terminal) / 100f);
             }
-            return (int)(purchasableItems[itemId].GetItem(ref Terminal).creditsWorth * multiplier);
+            return (int)(cost * multiplier);
         }
         public static int GetUnlockableCost(string unlockableId)
         {
             float multiplier = SyncedConfig.Instance.UnlockablePriceMultipliers.TryGetValue(unlockableId, out float value) ? value : -1f;
+            int cost = purchasableUnlockables[unlockableId].GetNode().itemCost;
             if (multiplier == -1)
             {
-                return purchasableUnlockables[unlockableId].GetNode().itemCost;
+                return cost;
             }
-            if (purchasableUnlockables[unlockableId].GetNode().itemCost == 0)
+            if (cost == 0)
             {
                 return (int)multiplier;
             }
-            return (int)(purchasableUnlockables[unlockableId].GetNode().itemCost * multiplier);
+            return (int)(cost * multiplier);
         }
 
         public class Moon
@@ -1497,7 +1508,7 @@ namespace lammOS
             [HarmonyPatch("SetClock")]
             [HarmonyPostfix]
             [HarmonyPriority(-2147483648)]
-            public static void SetClock(ref HUDManager __instance)
+            public static void PostSetClock(ref HUDManager __instance)
             {
                 if (ShowTerminalClock.Value)
                 {
@@ -1510,7 +1521,7 @@ namespace lammOS
             [HarmonyPatch("FillEndGameStats")]
             [HarmonyPostfix]
             [HarmonyPriority(-2147483648)]
-            public static void FillEndGameStats()
+            public static void PostFillEndGameStats()
             {
                 ClockText.text = "";
             }
@@ -4116,30 +4127,70 @@ namespace lammOS
                 Instance.MaxDropshipItemsValue = MaxDropshipItems.Value;
 
                 Instance.EnabledCommands = new();
+                bool giveDescription = true;
                 foreach (Command command in GetCommands())
                 {
-                    ConfigEntry<bool> enabled = Config.Bind("Synced - Enabled Commands", command.id + "_Enabled", command.enabled);
+                    ConfigEntry<bool> enabled;
+                    if (giveDescription)
+                    {
+                        enabled = Config.Bind("Synced - Enabled Commands", command.id + "_Enabled", command.enabled, "Whether a command should be enabled or disabled.");
+                        giveDescription = false;
+                    }
+                    else
+                    {
+                        enabled = Config.Bind("Synced - Enabled Commands", command.id + "_Enabled", command.enabled);
+                    }
                     Instance.EnabledCommands.Add(command.id, enabled.Value);
                 }
 
                 Instance.MoonPriceMultipliers = new();
+                giveDescription = true;
                 foreach (string moonId in moons.Keys)
                 {
-                    ConfigEntry<float> priceMultiplier = Config.Bind("Synced - Moon Price Multipliers", moonId + "_PriceMultiplier", moons[moonId].GetNode().itemCost == 0 ? 0f : 1f);
+                    ConfigEntry<float> priceMultiplier;
+                    if (giveDescription)
+                    {
+                        priceMultiplier = Config.Bind("Synced - Moon Price Multipliers", moonId + "_PriceMultiplier", moons[moonId].GetNode().itemCost == 0 ? 0f : 1f, "If a moon's default price is 0, the multiplier will override the actual price of the moon, otherwise the multiplier will multiply the moon's default price.");
+                        giveDescription = false;
+                    }
+                    else
+                    {
+                        priceMultiplier = Config.Bind("Synced - Moon Price Multipliers", moonId + "_PriceMultiplier", moons[moonId].GetNode().itemCost == 0 ? 0f : 1f);
+                    }
                     Instance.MoonPriceMultipliers.Add(moonId, priceMultiplier.Value >= 0 ? priceMultiplier.Value : 0);
                 }
 
                 Instance.ItemPriceMultipliers = new();
+                giveDescription = true;
                 foreach (string itemId in purchasableItems.Keys)
                 {
-                    ConfigEntry<float> priceMultiplier = Config.Bind("Synced - Item Price Multipliers", itemId + "_PriceMultiplier", purchasableItems[itemId].GetItem(ref Terminal).creditsWorth == 0 ? 0f : 1f);
+                    ConfigEntry<float> priceMultiplier;
+                    if (giveDescription)
+                    {
+                        priceMultiplier = Config.Bind("Synced - Item Price Multipliers", itemId + "_PriceMultiplier", purchasableItems[itemId].GetItem(ref Terminal).creditsWorth == 0 ? 0f : 1f, "If an item's default price is 0, the multiplier will override the actual price of the item, otherwise the multiplier will multiply the item's default price.");
+                        giveDescription = false;
+                    }
+                    else
+                    {
+                        priceMultiplier = Config.Bind("Synced - Item Price Multipliers", itemId + "_PriceMultiplier", purchasableItems[itemId].GetItem(ref Terminal).creditsWorth == 0 ? 0f : 1f);
+                    }
                     Instance.ItemPriceMultipliers.Add(itemId, priceMultiplier.Value >= 0 ? priceMultiplier.Value : 0);
                 }
 
                 Instance.UnlockablePriceMultipliers = new();
+                giveDescription = true;
                 foreach (string unlockableId in purchasableUnlockables.Keys)
                 {
-                    ConfigEntry<float> priceMultiplier = Config.Bind("Synced - Unlockable Price Multipliers", unlockableId + "_PriceMultiplier", purchasableUnlockables[unlockableId].GetNode().itemCost == 0 ? 0f : 1f);
+                    ConfigEntry<float> priceMultiplier;
+                    if (giveDescription)
+                    {
+                        priceMultiplier = Config.Bind("Synced - Unlockable Price Multipliers", unlockableId + "_PriceMultiplier", purchasableUnlockables[unlockableId].GetNode().itemCost == 0 ? 0f : 1f, "If an unlockable's default price is 0, the multiplier will override the actual price of the unlockable, otherwise the multiplier will multiply the unlockable's default price.");
+                        giveDescription = false;
+                    }
+                    else
+                    {
+                        priceMultiplier = Config.Bind("Synced - Unlockable Price Multipliers", unlockableId + "_PriceMultiplier", purchasableUnlockables[unlockableId].GetNode().itemCost == 0 ? 0f : 1f);
+                    }
                     Instance.UnlockablePriceMultipliers.Add(unlockableId, priceMultiplier.Value >= 0 ? priceMultiplier.Value : 0);
                 }
 
