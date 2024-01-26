@@ -64,6 +64,11 @@ I also pre-patched the Terminal.TextPostProcess method to do nothing by default,
 - @lammas123 on Discord - [Lethal Company Modding Discord](https://discord.com/invite/lcmod) - [lammOS Thread](https://discord.com/channels/1168655651455639582/1196941743673847938)
 
 # Changelog
+## 1.2.3
+- Added a helpful description to all of the first config options in the Synced config per category.
+- Actually fixed the issue with items not being properly discounted.
+- Made some code readability improvements to getting a moon, item, or unlockables price.
+
 ## 1.2.2
 - Added `>MONITOR` body/helmet camera support for [Solos_Bodycams by CapyCat](https://thunderstore.io/c/lethal-company/p/CapyCat/Solos_Bodycams/) and [OpenBodyCams by Zaggy1024](https://thunderstore.io/c/lethal-company/p/Zaggy1024/OpenBodyCams/).
 - Improved the valid radar targets filter on the `>TARGETS` command to use the same one that switching to targets on the monitor actually uses, rather than filtering out names that start with "Player #".
