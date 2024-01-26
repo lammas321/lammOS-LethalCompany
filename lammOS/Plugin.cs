@@ -16,9 +16,17 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.UI;
 
+// Split into multiple files
+// More clear command shortcuts
+// More detail for "code" command, why it doesn't do anything (requires allowing setting result of a DummyCommand)
+// Swap arguments for <required> [optional] (comment) {required: one|of|the|following} [optional: one|of|the|following]
+// Have item prices and sales align in the store (and other places) use str.PadRight(desiredLength)
+// Give scan "scrap" 'shortcut'
+// Wait function for macros, maybe have max commands per second/command delay (host syncable option?)
+
 namespace lammOS
 {
-    [BepInPlugin("lammas123.lammOS", "lammOS", "1.2.3")]
+    [BepInPlugin("lammas123.lammOS", "lammOS", "1.3.0")]
     [BepInDependency("com.rune580.LethalCompanyInputUtils", MinimumDependencyVersion: "0.6.0")]
     public class lammOS : BaseUnityPlugin
     {
@@ -70,7 +78,7 @@ namespace lammOS
         internal static int commandHistoryIndex = -1;
         internal static string lastTypedCommand = "";
 
-        internal static readonly string newStartupText = "Powered by lammOS     Created by lammas123\n          Courtesy of the Company\n\nType HELP for a list of available commands.\n\n>";
+        public static readonly string newStartupText = "Powered by lammOS     Created by lammas123\n          Courtesy of the Company\n\nType HELP for a list of available commands.\n\n>";
         internal static string currentLoadedNode = "";
         internal static string startupNodeText = "";
         internal static string helpNodeText = "";
@@ -79,7 +87,7 @@ namespace lammOS
         internal static TextMeshProUGUI ClockText => Clock.GetComponent<TextMeshProUGUI>();
 
         internal static RawImage bodyHelmetCameraImage = null;
-        internal static bool hasBodyHelmetCameraMod = true;
+        public static bool hasBodyHelmetCameraMod { get; internal set; } = true;
 
         internal void Awake()
         {
@@ -185,7 +193,7 @@ namespace lammOS
         {
             return commands.Remove(id);
         }
-
+        
         public static bool AddShortcut(string shortcut, string id)
         {
             if (IsShortcut(shortcut))
@@ -280,7 +288,7 @@ namespace lammOS
         public static int GetUnlockableCost(string unlockableId)
         {
             float multiplier = SyncedConfig.Instance.UnlockablePriceMultipliers.TryGetValue(unlockableId, out float value) ? value : -1f;
-            int cost = purchasableUnlockables[unlockableId].GetNode().itemCost;
+            int cost = purchasableUnlockables[unlockableId].node.itemCost;
             if (multiplier == -1)
             {
                 return cost;
@@ -336,24 +344,14 @@ namespace lammOS
         }
         public class PurchaseableUnlockable
         {
-            public int unlockableIndex;
-            public int nodeIndex;
+            public UnlockableItem unlockable;
+            public TerminalNode node;
             public string shortestChars;
 
-            public PurchaseableUnlockable(int unlockableIndex, int nodeIndex)
+            public PurchaseableUnlockable(UnlockableItem unlockable, TerminalNode node)
             {
-                this.unlockableIndex = unlockableIndex;
-                this.nodeIndex = nodeIndex;
-            }
-
-            public UnlockableItem GetUnlockable()
-            {
-                return StartOfRound.Instance.unlockablesList.unlockables[unlockableIndex];
-            }
-
-            public TerminalNode GetNode()
-            {
-                return terminalKeywords["buy"].compatibleNouns[nodeIndex].result;
+                this.unlockable = unlockable;
+                this.node = node;
             }
         }
         public class Entity
@@ -580,27 +578,37 @@ namespace lammOS
             }
 
             purchasableUnlockables = new();
-            for (int i = 0; i < StartOfRound.Instance.unlockablesList.unlockables.Count; i++)
+            foreach (UnlockableItem unlockable in StartOfRound.Instance.unlockablesList.unlockables)
             {
-                bool foundMatch = false;
-                for (int j = 0; j < terminalKeywords["buy"].compatibleNouns.Length; j++)
+                if (unlockable.shopSelectionNode == null)
                 {
-                    if (StartOfRound.Instance.unlockablesList.unlockables[i].unlockableName.ToLower().Replace("-", " ").StartsWith(terminalKeywords["buy"].compatibleNouns[j].noun.word.Replace("-", " ")))
+                    bool foundMatch = false;
+                    for (int j = 0; j < terminalKeywords["buy"].compatibleNouns.Length; j++)
                     {
-                        if (purchasableUnlockables.ContainsKey(terminalKeywords["buy"].compatibleNouns[j].result.creatureName.ToLower()))
+                        if (unlockable.unlockableName.ToLower().Replace("-", " ").StartsWith(terminalKeywords["buy"].compatibleNouns[j].noun.word.Replace("-", " ")))
                         {
-                            Logger.LogWarning("A purchasable unlockable has already been added with the name: '" + terminalKeywords["buy"].compatibleNouns[j].result.creatureName.ToLower() + "'");
-                            continue;
+                            if (purchasableUnlockables.ContainsKey(terminalKeywords["buy"].compatibleNouns[j].result.creatureName.ToLower()))
+                            {
+                                Logger.LogWarning("A purchasable unlockable has already been added with the name: '" + terminalKeywords["buy"].compatibleNouns[j].result.creatureName.ToLower() + "'");
+                                continue;
+                            }
+                            purchasableUnlockables.Add(terminalKeywords["buy"].compatibleNouns[j].result.creatureName.ToLower(), new PurchaseableUnlockable(unlockable, terminalKeywords["buy"].compatibleNouns[j].result));
+                            foundMatch = true;
+                            break;
                         }
-                        purchasableUnlockables.Add(terminalKeywords["buy"].compatibleNouns[j].result.creatureName.ToLower(), new PurchaseableUnlockable(i, j));
-                        foundMatch = true;
-                        break;
                     }
+                    if (!foundMatch && !unlockable.alreadyUnlocked && !unlockable.unlockedInChallengeFile && unlockable.unlockableType != 753)
+                    {
+                        Logger.LogWarning("Could not find a matching buy node for the unlockable: '" + unlockable.unlockableName + "'" + unlockable.IsPlaceable.ToString());
+                    }
+                    continue;
                 }
-                if (!foundMatch && !StartOfRound.Instance.unlockablesList.unlockables[i].alreadyUnlocked && !StartOfRound.Instance.unlockablesList.unlockables[i].unlockedInChallengeFile)
+                if (purchasableUnlockables.ContainsKey(unlockable.shopSelectionNode.creatureName.ToLower()))
                 {
-                    Logger.LogWarning("Could not find a matching buy node for the unlockable: '" + StartOfRound.Instance.unlockablesList.unlockables[i].unlockableName + "'");
+                    Logger.LogWarning("A purchasable unlockable has already been added with the name: '" + unlockable.shopSelectionNode.creatureName.ToLower() + "'");
+                    continue;
                 }
+                purchasableUnlockables.Add(unlockable.shopSelectionNode.creatureName.ToLower(), new PurchaseableUnlockable(unlockable, unlockable.shopSelectionNode));
             }
 
             foreach (string unlockableId in purchasableUnlockables.Keys)
@@ -1044,7 +1052,7 @@ namespace lammOS
                 }
             }
         }
-        internal void LoadVariables(ref Terminal terminal)
+        public void LoadVariables(ref Terminal terminal)
         {
             LoadConfigValues();
 
@@ -1462,7 +1470,7 @@ namespace lammOS
                 string unlockableId = null;
                 foreach (string u in purchasableUnlockables.Keys)
                 {
-                    if (purchasableUnlockables[u].GetNode().shipUnlockableID == unlockableID)
+                    if (purchasableUnlockables[u].node.shipUnlockableID == unlockableID)
                     {
                         unlockableId = u;
                         break;
@@ -1758,7 +1766,7 @@ namespace lammOS
                 args = "(Moon)";
             }
 
-            public void DetailedPercentageOrRarity(int rarity, int totalRarity, ref TerminalNode node)
+            public void GeneratePercentageOrRarity(int rarity, int totalRarity, ref TerminalNode node)
             {
                 if (ShowPercentagesOrRarity.Value == "Percentage")
                 {
@@ -1792,7 +1800,7 @@ namespace lammOS
                 if (level.dungeonFlowTypes.Length == 0)
                 {
                     node.displayText += "\n* 0: ";
-                    DetailedPercentageOrRarity(1, 1, ref node);
+                    GeneratePercentageOrRarity(1, 1, ref node);
                     return;
                 }
 
@@ -1808,7 +1816,7 @@ namespace lammOS
                         continue;
                     }
                     node.displayText += "\n* " + rarity.id.ToString() + ": ";
-                    DetailedPercentageOrRarity(rarity.rarity, dungeonRarity, ref node);
+                    GeneratePercentageOrRarity(rarity.rarity, dungeonRarity, ref node);
                 }
             }
             public void GenerateDetailedScrap(SelectableLevel level, ref TerminalNode node)
@@ -1829,7 +1837,7 @@ namespace lammOS
                         continue;
                     }
                     node.displayText += "\n* " + item.spawnableItem.itemName + "   ";
-                    DetailedPercentageOrRarity(item.rarity, itemRarity, ref node);
+                    GeneratePercentageOrRarity(item.rarity, itemRarity, ref node);
                 }
             }
             public void GenerateDetailedEntities(SelectableLevel level, ref TerminalNode node)
@@ -1857,7 +1865,7 @@ namespace lammOS
                             continue;
                         }
                         node.displayText += "\n* " + entities[entity.enemyType.enemyName].displayName + " (" + entity.enemyType.PowerLevel + " : " + entity.enemyType.MaxCount + ")   ";
-                        DetailedPercentageOrRarity(entity.rarity, daytimeEntityRarity, ref node);
+                        GeneratePercentageOrRarity(entity.rarity, daytimeEntityRarity, ref node);
                     }
                 }
 
@@ -1880,7 +1888,7 @@ namespace lammOS
                             continue;
                         }
                         node.displayText += "\n* " + entities[entity.enemyType.enemyName].displayName + " (" + entity.enemyType.PowerLevel + " : " + entity.enemyType.MaxCount + ")   ";
-                        DetailedPercentageOrRarity(entity.rarity, insideEntityRarity, ref node);
+                        GeneratePercentageOrRarity(entity.rarity, insideEntityRarity, ref node);
                     }
                 }
 
@@ -1903,7 +1911,7 @@ namespace lammOS
                             continue;
                         }
                         node.displayText += "\n* " + entities[entity.enemyType.enemyName].displayName + " (" + entity.enemyType.PowerLevel + " : " + entity.enemyType.MaxCount + ")   ";
-                        DetailedPercentageOrRarity(entity.rarity, outsideEntityRarity, ref node);
+                        GeneratePercentageOrRarity(entity.rarity, outsideEntityRarity, ref node);
                     }
                 }
             }
@@ -2169,12 +2177,12 @@ namespace lammOS
                 List<PurchaseableUnlockable> upgrades = new();
                 foreach (PurchaseableUnlockable unlockable in purchasableUnlockables.Values)
                 {
-                    if (unlockable.GetUnlockable().alwaysInStock && !unlockable.GetUnlockable().hasBeenUnlockedByPlayer && !unlockable.GetUnlockable().alreadyUnlocked)
+                    if (unlockable.unlockable.alwaysInStock && !unlockable.unlockable.hasBeenUnlockedByPlayer && !unlockable.unlockable.alreadyUnlocked)
                     {
                         upgrades.Add(unlockable);
                     }
                 }
-                upgrades.Sort((x, y) => GetUnlockableCost(x.GetNode().creatureName.ToLower()) - GetUnlockableCost(y.GetNode().creatureName.ToLower()));
+                upgrades.Sort((x, y) => GetUnlockableCost(x.node.creatureName.ToLower()) - GetUnlockableCost(y.node.creatureName.ToLower()));
 
                 node.displayText += "\n\nShip Upgrades:\n------------------------------";
                 if (upgrades.Count == 0)
@@ -2190,7 +2198,7 @@ namespace lammOS
                     {
                         node.displayText += "(" + unlockable.shortestChars + ") ";
                     }
-                    node.displayText += unlockable.GetNode().creatureName + "   $" + GetUnlockableCost(unlockable.GetNode().creatureName.ToLower()).ToString();
+                    node.displayText += unlockable.node.creatureName + "   $" + GetUnlockableCost(unlockable.node.creatureName.ToLower()).ToString();
                 }
             }
             public void GenerateDecorSelection(ref Terminal terminal, ref TerminalNode node)
@@ -2200,14 +2208,14 @@ namespace lammOS
                 foreach (TerminalNode decorNode in terminal.ShipDecorSelection)
                 {
                     PurchaseableUnlockable purchasableUnlockable = purchasableUnlockables[decorNode.creatureName.ToLower()];
-                    if (!purchasableUnlockable.GetUnlockable().hasBeenUnlockedByPlayer && !purchasableUnlockable.GetUnlockable().alreadyUnlocked)
+                    if (!purchasableUnlockable.unlockable.hasBeenUnlockedByPlayer && !purchasableUnlockable.unlockable.alreadyUnlocked)
                     {
                         node.displayText += "\n* ";
                         if (ShowMinimumChars.Value)
                         {
                             node.displayText += "(" + purchasableUnlockable.shortestChars + ") ";
                         }
-                        node.displayText += decorNode.creatureName + "   $" + GetUnlockableCost(purchasableUnlockable.GetNode().creatureName.ToLower()).ToString();
+                        node.displayText += decorNode.creatureName + "   $" + GetUnlockableCost(purchasableUnlockable.node.creatureName.ToLower()).ToString();
 
                         decorAvailable = true;
                     }
@@ -2308,7 +2316,7 @@ namespace lammOS
                 PurchaseableUnlockable purchasableUnlockable = null;
                 foreach (PurchaseableUnlockable unlockable in purchasableUnlockables.Values)
                 {
-                    if (unlockable.GetNode().creatureName.ToLower().StartsWith(input))
+                    if (unlockable.node.creatureName.ToLower().StartsWith(input))
                     {
                         purchasableUnlockable = unlockable;
                         break;
@@ -2319,17 +2327,17 @@ namespace lammOS
                     ErrorResponse("No purchasable item or unlockable goes by the name: '" + input + "'", ref node);
                     return;
                 }
-                if (CheckNotEnoughChars(input.Length, purchasableUnlockable.GetNode().creatureName.Length, ref node))
+                if (CheckNotEnoughChars(input.Length, purchasableUnlockable.node.creatureName.Length, ref node))
                 {
                     return;
                 }
 
-                if (!purchasableUnlockable.GetUnlockable().alwaysInStock && !terminal.ShipDecorSelection.Contains(purchasableUnlockable.GetUnlockable().shopSelectionNode))
+                if (!purchasableUnlockable.unlockable.alwaysInStock && !terminal.ShipDecorSelection.Contains(purchasableUnlockable.unlockable.shopSelectionNode))
                 {
                     ErrorResponse("This unlockable is not for sale.", ref node);
                     return;
                 }
-                if (purchasableUnlockable.GetUnlockable().hasBeenUnlockedByPlayer || purchasableUnlockable.GetUnlockable().alreadyUnlocked)
+                if (purchasableUnlockable.unlockable.hasBeenUnlockedByPlayer || purchasableUnlockable.unlockable.alreadyUnlocked)
                 {
                     ErrorResponse("You already have this unlockable.", ref node);
                     return;
@@ -2340,7 +2348,7 @@ namespace lammOS
                 if (ShowCommandConfirmationsValue)
                 {
                     currentCommand = this;
-                    node.displayText = "Would you like to purchase a " + purchasableUnlockable.GetNode().creatureName + " for $" + GetUnlockableCost(purchasableUnlockable.GetNode().creatureName.ToLower()).ToString() + "?\nType CONFIRM to confirm your purchase.";
+                    node.displayText = "Would you like to purchase a " + purchasableUnlockable.node.creatureName + " for $" + GetUnlockableCost(purchasableUnlockable.node.creatureName.ToLower()).ToString() + "?\nType CONFIRM to confirm your purchase.";
                     return;
                 }
 
@@ -2412,7 +2420,7 @@ namespace lammOS
             }
             public void TryPurchaseUnlockable(ref Terminal terminal, ref TerminalNode node)
             {
-                int cost = GetUnlockableCost(purchasableUnlockable.GetNode().creatureName.ToLower());
+                int cost = GetUnlockableCost(purchasableUnlockable.node.creatureName.ToLower());
                 if (terminal.groupCredits < cost)
                 {
                     ErrorResponse("You do not have enough credits to purchase that unlockable.", ref node);
@@ -2427,15 +2435,15 @@ namespace lammOS
                 HUDManager.Instance.DisplayTip("Tip", "Press B to move and place objects in the ship, E to cancel.", false, true, "LC_MoveObjectsTip");
                 if (terminal.IsHost)
                 {
-                    StartOfRound.Instance.BuyShipUnlockableServerRpc(purchasableUnlockable.GetNode().shipUnlockableID, terminal.groupCredits - cost);
+                    StartOfRound.Instance.BuyShipUnlockableServerRpc(purchasableUnlockable.node.shipUnlockableID, terminal.groupCredits - cost);
                 }
                 else
                 {
                     terminal.groupCredits = Mathf.Clamp(terminal.groupCredits - cost, 0, 10000000);
-                    StartOfRound.Instance.BuyShipUnlockableServerRpc(purchasableUnlockable.GetNode().shipUnlockableID, terminal.groupCredits);
+                    StartOfRound.Instance.BuyShipUnlockableServerRpc(purchasableUnlockable.node.shipUnlockableID, terminal.groupCredits);
                 }
 
-                node.displayText = "Purchased " + purchasableUnlockable.GetNode().creatureName + " for $" + cost.ToString() + ".";
+                node.displayText = "Purchased " + purchasableUnlockable.node.creatureName + " for $" + cost.ToString() + ".";
                 node.playSyncedClip = terminalSyncedSounds["buy"];
             }
 
@@ -2471,14 +2479,14 @@ namespace lammOS
                 node.displayText = "Use the RETRIEVE command to take unlockables out of storage.\nStored Unlockables:";
                 foreach (PurchaseableUnlockable unlockable in purchasableUnlockables.Values)
                 {
-                    if (unlockable.GetUnlockable().inStorage)
+                    if (unlockable.unlockable.inStorage)
                     {
                         node.displayText += "\n* ";
                         if (ShowMinimumChars.Value)
                         {
                             node.displayText += "(" + unlockable.shortestChars + ") ";
                         }
-                        node.displayText += unlockable.GetNode().creatureName;
+                        node.displayText += unlockable.node.creatureName;
                     }
                 }
                 if (node.displayText == "Use the RETRIEVE command to take unlockables out of storage.\nStored Unlockables:")
@@ -2511,7 +2519,7 @@ namespace lammOS
                 PurchaseableUnlockable purchasableUnlockable = null;
                 foreach (PurchaseableUnlockable unlockable in purchasableUnlockables.Values)
                 {
-                    if (unlockable.GetNode().creatureName.ToLower().StartsWith(input))
+                    if (unlockable.node.creatureName.ToLower().StartsWith(input))
                     {
                         purchasableUnlockable = unlockable;
                         break;
@@ -2522,23 +2530,23 @@ namespace lammOS
                     ErrorResponse("No unlockable goes by the name: '" + input + "'", ref node);
                     return;
                 }
-                if (CheckNotEnoughChars(input.Length, purchasableUnlockable.GetNode().creatureName.Length, ref node))
+                if (CheckNotEnoughChars(input.Length, purchasableUnlockable.node.creatureName.Length, ref node))
                 {
                     return;
                 }
 
-                if (!purchasableUnlockable.GetUnlockable().inStorage)
+                if (!purchasableUnlockable.unlockable.inStorage)
                 {
                     ErrorResponse("That unlockable is not in storage.", ref node);
                     return;
                 }
-                if (!purchasableUnlockable.GetUnlockable().hasBeenUnlockedByPlayer && !purchasableUnlockable.GetUnlockable().alreadyUnlocked)
+                if (!purchasableUnlockable.unlockable.hasBeenUnlockedByPlayer && !purchasableUnlockable.unlockable.alreadyUnlocked)
                 {
                     ErrorResponse("You do not own that unlockable.", ref node);
                     return;
                 }
 
-                StartOfRound.Instance.ReturnUnlockableFromStorageServerRpc(purchasableUnlockable.GetNode().shipUnlockableID);
+                StartOfRound.Instance.ReturnUnlockableFromStorageServerRpc(purchasableUnlockable.node.shipUnlockableID);
                 node.displayText = "Returned unlockable from storage.";
             }
         }
@@ -2938,7 +2946,7 @@ namespace lammOS
                     return;
                 }
                 
-                StartMatchLever lever = FindObjectOfType<StartMatchLever>();
+                StartMatchLever lever = FindAnyObjectByType<StartMatchLever>();
                 if (lever.leverHasBeenPulled)
                 {
                     ErrorResponse("The lever has already been pulled.", ref node);
@@ -3002,7 +3010,7 @@ namespace lammOS
                     return;
                 }
 
-                StartMatchLever lever = FindObjectOfType<StartMatchLever>();
+                StartMatchLever lever = FindAnyObjectByType<StartMatchLever>();
                 if (!lever.leverHasBeenPulled)
                 {
                     ErrorResponse("The lever has already been pulled.", ref node);
@@ -3070,7 +3078,7 @@ namespace lammOS
 
             public override void Execute(ref Terminal terminal, string input, ref TerminalNode node)
             {
-                foreach (ShipTeleporter teleporter in FindObjectsOfType<ShipTeleporter>())
+                foreach (ShipTeleporter teleporter in FindObjectsByType<ShipTeleporter>(FindObjectsSortMode.None))
                 {
                     if (!teleporter.isInverseTeleporter)
                     {
@@ -3103,7 +3111,7 @@ namespace lammOS
 
             public override void Execute(ref Terminal terminal, string input, ref TerminalNode node)
             {
-                foreach (ShipTeleporter teleporter in FindObjectsOfType<ShipTeleporter>())
+                foreach (ShipTeleporter teleporter in FindObjectsByType<ShipTeleporter>(FindObjectsSortMode.None))
                 {
                     if (teleporter.isInverseTeleporter)
                     {
@@ -3140,7 +3148,7 @@ namespace lammOS
                 int shipCount = 0, shipValue = 0, indoorCount = 0, indoorValue = 0, outdoorCount = 0, outdoorValue = 0;
                 string outdoorItems = "", indoorItems = "";
 
-                foreach (GrabbableObject item in FindObjectsOfType<GrabbableObject>())
+                foreach (GrabbableObject item in FindObjectsByType<GrabbableObject>(FindObjectsSortMode.None))
                 {
                     if (!item.itemProperties.isScrap)
                     {
@@ -3186,7 +3194,7 @@ namespace lammOS
 
             public override void Execute(ref Terminal terminal, string input, ref TerminalNode node)
             {
-                SignalTranslator signalTranslator = FindObjectOfType<SignalTranslator>();
+                SignalTranslator signalTranslator = FindAnyObjectByType<SignalTranslator>();
                 if (signalTranslator == null)
                 {
                     ErrorResponse("You do not own a signal translator.", ref node);
@@ -3243,7 +3251,7 @@ namespace lammOS
             public override void Execute(ref Terminal terminal, string input, ref TerminalNode node)
             {
                 node.displayText = "Alphanumeric Codes:";
-                foreach (TerminalAccessibleObject tao in FindObjectsOfType<TerminalAccessibleObject>())
+                foreach (TerminalAccessibleObject tao in FindObjectsByType<TerminalAccessibleObject>(FindObjectsSortMode.None))
                 {
                     node.displayText += "\n* " + tao.objectCode + ": ";
                     if (tao.isBigDoor)
@@ -3643,7 +3651,7 @@ namespace lammOS
                             text += "\n\nPurchaseable Unlockables:";
                             foreach (PurchaseableUnlockable unlockable in purchasableUnlockables.Values)
                             {
-                                text += "\n* " + unlockable.GetNode().creatureName + "   (" + unlockable.shortestChars + ")";
+                                text += "\n* " + unlockable.node.creatureName + "   (" + unlockable.shortestChars + ")";
                             }
                             text += "\n\nSigurd Logs:";
                             foreach (Log log in logs.Values)
@@ -3903,7 +3911,7 @@ namespace lammOS
                     return;
                 }
 
-                TerminalAccessibleObject[] objects = FindObjectsOfType<TerminalAccessibleObject>();
+                TerminalAccessibleObject[] objects = FindObjectsByType<TerminalAccessibleObject>(FindObjectsSortMode.None);
                 switch (action)
                 {
                     case "default":
@@ -3941,8 +3949,8 @@ namespace lammOS
                         }
                     case "activate":
                         {
-                            Landmine[] landmines = FindObjectsOfType<Landmine>();
-                            Turret[] turrets = FindObjectsOfType<Turret>();
+                            Landmine[] landmines = FindObjectsByType<Landmine>(FindObjectsSortMode.None);
+                            Turret[] turrets = FindObjectsByType<Turret>(FindObjectsSortMode.None);
                             foreach (TerminalAccessibleObject obj in objects)
                             {
                                 if (obj.objectCode == id && !obj.isBigDoor)
@@ -3987,11 +3995,11 @@ namespace lammOS
 
             public override void Execute(ref Terminal terminal, string input, ref TerminalNode node)
             {
-                
+                node.displayText = ">";
             }
         }
 
-        abstract public class ConfirmationCommand : Command
+        public abstract class ConfirmationCommand : Command
         {
             public abstract void Confirmed(ref Terminal terminal, ref TerminalNode node);
 
@@ -4010,7 +4018,7 @@ namespace lammOS
             }
         }
 
-        abstract public class Command
+        public abstract class Command
         {
             public string category = "Uncategorized";
             public string id { get; internal set; } = "";
@@ -4184,12 +4192,12 @@ namespace lammOS
                     ConfigEntry<float> priceMultiplier;
                     if (giveDescription)
                     {
-                        priceMultiplier = Config.Bind("Synced - Unlockable Price Multipliers", unlockableId + "_PriceMultiplier", purchasableUnlockables[unlockableId].GetNode().itemCost == 0 ? 0f : 1f, "If an unlockable's default price is 0, the multiplier will override the actual price of the unlockable, otherwise the multiplier will multiply the unlockable's default price.");
+                        priceMultiplier = Config.Bind("Synced - Unlockable Price Multipliers", unlockableId + "_PriceMultiplier", purchasableUnlockables[unlockableId].node.itemCost == 0 ? 0f : 1f, "If an unlockable's default price is 0, the multiplier will override the actual price of the unlockable, otherwise the multiplier will multiply the unlockable's default price.");
                         giveDescription = false;
                     }
                     else
                     {
-                        priceMultiplier = Config.Bind("Synced - Unlockable Price Multipliers", unlockableId + "_PriceMultiplier", purchasableUnlockables[unlockableId].GetNode().itemCost == 0 ? 0f : 1f);
+                        priceMultiplier = Config.Bind("Synced - Unlockable Price Multipliers", unlockableId + "_PriceMultiplier", purchasableUnlockables[unlockableId].node.itemCost == 0 ? 0f : 1f);
                     }
                     Instance.UnlockablePriceMultipliers.Add(unlockableId, priceMultiplier.Value >= 0 ? priceMultiplier.Value : 0);
                 }
