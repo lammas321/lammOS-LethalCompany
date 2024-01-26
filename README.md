@@ -53,6 +53,7 @@ I also pre-patched the Terminal.TextPostProcess method to do nothing by default,
 - Fixing a potential error that could occur if modded planets don't follow the same naming scheme that vanilla ones do. This hasn't been a problem quite yet but it is something I'm aware of.
 - Fixing the possibility of any desyncing or inconsistencies occuring caused by other mods, so that the `>RELOAD` command doesn't need to be used.
 - Showing the entity's base health when viewing one using the `>BESTIARY` command.
+- Reformatting the README.md, so that it's less massive blobs of texts while still giving relatively the same information.
 
 ## Known Incompatibilities
 - [Advanced Company by PotatoePet](https://thunderstore.io/c/lethal-company/p/PotatoePet/AdvancedCompany/)
@@ -63,6 +64,14 @@ I also pre-patched the Terminal.TextPostProcess method to do nothing by default,
 - @lammas123 on Discord - [Lethal Company Modding Discord](https://discord.com/invite/lcmod) - [lammOS Thread](https://discord.com/channels/1168655651455639582/1196941743673847938)
 
 # Changelog
+## 1.2.2
+- Added `>MONITOR` body/helmet camera support for [Solos_Bodycams by CapyCat](https://thunderstore.io/c/lethal-company/p/CapyCat/Solos_Bodycams/) and [OpenBodyCams by Zaggy1024](https://thunderstore.io/c/lethal-company/p/Zaggy1024/OpenBodyCams/).
+- Improved the valid radar targets filter on the `>TARGETS` command to use the same one that switching to targets on the monitor actually uses, rather than filtering out names that start with "Player #".
+- Cached the Terminal object as a static property so that I don't need to use the slower FindObjectOfType method to get it in some places.
+- Replaced the usages of FindObjectOfType<StartOfRound>() with StartOfRound.Instance.
+- Fixed purchaseable items not properly being discounted in the store or while purchasing items. (How did I miss this??)
+- Fixed using the left arrow to switch to previous radar targets skipping some targets when it shouldn't.
+
 ## 1.2.1
 - Added an `enabled` property to all commands that is set to true by default. Though some commands, like a few I am adding in this update, will be disabled by default.
   - Additionally, I've added a section to the Synced config for commands to be to set as enabled or disabled by the host.
