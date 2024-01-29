@@ -44,9 +44,9 @@
   </Target>
 
   <ItemGroup>
-    <PackageReference Include="BepInEx.Analyzers"       Version="1.0.8" PrivateAssets="all" />
+    <PackageReference Include="BepInEx.Analyzers"       Version="1.*" PrivateAssets="all" />
     <PackageReference Include="BepInEx.Core"            Version="5.4.*" />
-    <PackageReference Include="BepInEx.PluginInfoProps" Version="2.1.0" />
+    <PackageReference Include="BepInEx.PluginInfoProps" Version="2.*" />
     <PackageReference Include="UnityEngine.Modules"     Version="2023.2.4" IncludeAssets="compile" />
   </ItemGroup>
 
