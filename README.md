@@ -1,69 +1,128 @@
 # What is lammOS?
 lammOS is a mod that reworks how the terminal commands work, changing how many of them function, and adding several new ones.
 
-## What's Reworked
+# What's Reworked
 The way commands are parsed and processed by the terminal have been reworked, making using and adding new content to the terminal a smoother experience.
 - This has the negative side effect of command results not being 100% similar or synced with the vanilla game or other mods, especially if the game updates or mods change or add content making any drastic changes.
 - This will also cause commands added or changed by other mods that use nodes and keywords, what the game normally uses, to *potentially* be unstable with the terminal, though some will still work with minimal issues. It is possible for other mods to add their own lammOS compatible commands with an optional or required dependency if they so choose though, minimizing all potential issues.
 
+## Specifics
 More specifically, for modders that are curious, what I did is pre-patch the Terminal.ParsePlayerSentence method to return my own TerminalNode that does basically nothing unless I need it to, such as to use it's displayText property. This does not run any of the code in the actual Terminal.ParsePlayerSentence method, instead I parse the text myself and run the corresponding command's Execute method to give it it's functionality, then it goes on to call the Terminal.LoadNewNode method as normal to update the terminal's on screen text.
-I also pre-patched the Terminal.TextPostProcess method to do nothing by default, as it's functionality is not needed with this mod. This is toggleable within the config for compatibility with other mods however.
+- I also pre-patched the Terminal.TextPostProcess method to do nothing by default, as it's functionality is not needed with this mod. This is toggleable within the config for compatibility with other mods however.
 
-## What's Changed
-- The screens that are shown upon opening the terminal have been changed to show that the terminal is powered by lammOS.
-- All responses from commands will be formatted to end with a `>` with an empty line between the previous text and the `>`, to ensure command responses have some level of consistency. 
-- You now don't need to enter at least three characters for the terminal to understand what you were trying to buy or view, you only need to type the first character, or however many you set for the CharsToAutocomplete config option, but keep in mind it will pick the first thing it finds that matches the first couple character(s) you enter and assume that's what you wanted.
-  - Setting the CharsToAutocomplete config option to a value above the character length of certain options will require you to type the full name of the option.
-- The `>HELP` command now lists all of the available commands and the arguments they take in, and giving it the name of another command as a argument will give you more information about it.
-  - All commands are given a "category", and those commands will be shown in categories when using the `>HELP` command with no arguments.
-- Most commands now have shortcuts, for example:
-  - `>MOON` -> `>M`
-  - `>PING` -> `>P`
-  - `>TRANSMIT` -> `>T`
-- Commands like `>MOON` and `>BESTIARY` will show even more details about the moon or entity you are curious about.
-- The `>STORE` command will hide upgrades and other decorative items that have already been purchased.
-- There's a config option to have commands like `>ROUTE` and `>BUY` not ask for confirmation before doing something.
-- The `>SCAN` command now shows three categories for scanned items: in the ship, inside the building, and outside, as well as what items are at these locations and their values.
-  - As of v49, joining lobbies will show any scrap in the ship as being inside the building until they are picked up and dropped, this does not occur if you are the host.
-- The `>VIEW MONITOR` command has been simplified to `>MONITOR`, or simply `>V` with the command's shortcut, and the monitor now shows up instantly rather than slowly loading after entering the command.
-- The `>SWITCH` command will switch to the next radar target if entered with no arguments, as if you pushed the white button on the monitor, and the `>PING` and `>FLASH` commands will now act on the radar booster currently being viewed if entered with no arguments.
-- Along with many other small changes to vanilla commands, such as how they work to make them easier to use, and how their responses will look to clean some of the unnecessary text.
 
-## What's Added
-- The `>TARGETS` command, which lists all of the radar targets you can view on the monitor or terminal with `>MONITOR`.
-- A clear command (`>CLR` or `>C`) that will clear all text from the terminal, useful if you can't see the monitor after using the `>MONITOR` command.
-- The `>CODES` command, this lists all of the alphanumeric codes you can enter and what they are associated with (doors, turrets, or landmines) on the moon you are currently on.
-- The `>DOOR` and `>LIGHTS` commands to toggle the ship's door open/closed and lights on/off.
-- The `>TP` and `>ITP` commands to remotely activate the teleporter and inverse teleporter.
-- The `>SHORTCUTS` command, which will list all of the shortcuts associated with every command.
-- The `>RELOAD` command, to reload the config and fix any inconsistencies experienced with the terminal. There shouldn't be any inconsistencies unless you have mods that change certain properties while you're in game, if these changes are made beforehand, then there should be no problems.
-  - A list of properties that may need reloading if altered by mods, though this list is not limited to these properties, potentially includes:
-	- Purchaseable items and unlockables
-    - Entity invulnerability
-	- Entity power and the max that can exist
-	- Ect.
-- A clock in the top right corner of the terminal, optional with a config option.
-- Using the left and right arrow keys while on the terminal will make you switch between radar targets on the ships monitor.
-- Using the up and down arrow keys will let you go through your command history to run commands again or correct typos without having to retype the full command.
-- You can create and run macros that'll run a set of commands you give it, great for setting up a "kit" macro so that you can buy a lot of things you normally do quickly.
-  - If you have command confirmations on, you'll also have to have the macro confirm the action with a second command. Just entering `C` will make it so the command is confirmed if that config option is enabled, and it will "clear the terminal" if it isn't enabled as `C` is a shortcut for `>CLR`. Great to remember if you want to share your macros with others and want them to work universally.
-- A synced config to allow you to change the maximum amount of items on the delivery dropship, as well as change the prices for every moon, item, and unlockable.
+# What's Changed
+## Commands
+The `>HELP` command now lists all of the available commands and the arguments they take in, and giving it the name of another command as a argument will give you more information about that command.
+Most commands now have shortcuts, all of which are viewable with the `>SHORTCUTS` command, but for some examples:
+- `>MOON` -> `>M`
+- `>PING` -> `>P`
+- `>TRANSMIT` -> `>T`
 
-## What's Planned
-- Fixing a potential error that could occur if modded planets don't follow the same naming scheme that vanilla ones do. This hasn't been a problem quite yet but it is something I'm aware of.
-- Fixing the possibility of any desyncing or inconsistencies occuring caused by other mods, so that the `>RELOAD` command doesn't need to be used.
-- Showing the entity's base health when viewing one using the `>BESTIARY` command.
-- Reformatting the README.md, so that it's less massive blobs of texts while still giving relatively the same information.
+Commands like `>MOON` and `>BESTIARY` will show even more details about the moon or entity you are curious about.
+The `>STORE` command will hide upgrades and other decorations that have already been purchased.
 
-## Known Incompatibilities
-- [Advanced Company by PotatoePet](https://thunderstore.io/c/lethal-company/p/PotatoePet/AdvancedCompany/)
-  - Price changes don't sync, this has to do with how Advanced Company saves these changes, not making it possible for me to access them.
-    - The creator of the mod has plans to make an api that will allow me and other mod creators to get and modify these prices.
+The `>SCAN` command now shows three categories for scanned items: in the ship, inside the building, and outside, as well as what items are at these locations and their values.
+- As of v49, joining lobbies will show any scrap in the ship as being inside until they are picked up and dropped, this does not occur if you are the host.
+- Additionally, bee hives will appear as being inside instead of outside until they are picked up and dropped.
 
-## Contact
-- @lammas123 on Discord - [Lethal Company Modding Discord](https://discord.com/invite/lcmod) - [lammOS Thread](https://discord.com/channels/1168655651455639582/1196941743673847938)
+The `>VIEW MONITOR` command has been simplified to `>MONITOR`, or simply `>V` with the command's shortcut, and the monitor now shows up instantly rather than slowly loading after entering the command.
+
+The `>SWITCH` command will switch to the next radar target if entered with no arguments, as if you pushed the white button on the monitor.
+The `>PING` and `>FLASH` commands will now act on the radar booster currently being viewed if entered with no arguments.
+
+## Config Options
+You can disable confirmation screens for commands such as `>ROUTE` and `>BUY` by disabling the ShowCommandConfirmations config option.
+
+You can change how many characters you must enter for the terminal to understand what you were trying to buy or view, this can be changed using the CharsToAutocomplete config option, but keep in mind that it will pick the first thing it finds that matches the first couple character(s) you enter and assume that's what you wanted.
+- Setting the CharsToAutocomplete config option to a value above the character length of certain options will require you to type the full name of the option.
+- You can enable the ShowMinimumChars config option to show the minimum number of characters you need to enter next to the names of things in lists, such as on the `>MOONS` and `>STORE` pages.
+
+You can choose the padding character used in commands that show lists of things with the config option ListPaddingChar.
+
+You can choose whether to show percentages (20%) or rarities (1/5) for things involving chance with the config option ShowPercentagesOrRarity.
+
+
+# What's New
+## Commands
+The `>SHORTCUTS` command, which will list all of the shortcuts associated with every command.
+
+The `>TARGETS` command, which lists all of the radar targets you can view on the monitor or terminal with `>MONITOR`.
+
+A `>CLEAR` command that will clear all text from the terminal, useful if you can't see the monitor while the monitor is on screen after using the `>MONITOR` command.
+
+The `>CODES` command, this lists all of the alphanumeric codes you can enter and what they are associated with (doors, turrets, or landmines) on the moon you are currently on.
+
+The `>DOOR` and `>LIGHTS` commands to toggle the ship's door open or closed and lights on or off.
+The `>TP` and `>ITP` commands to remotely activate the teleporter and inverse teleporter.
+
+The `>RELOAD` command, to reload the config and fix any inconsistencies experienced with the terminal. There shouldn't be any inconsistencies unless you have mods that change certain properties while you're in game, if these changes are made beforehand, then there should be no problems.
+- A list of properties that may need reloading if altered by mods, though this list is not limited to these properties, potentially includes:
+  - The list of purchaseble items and unlockables
+  - Entity invulnerability
+  - Entity power and the max that can spawn
+  - Ect.
+
+You can create and run macros that'll run a set of commands you give it (`>CREATE-MACRO` and `>RUN-MACRO`), great for setting up a `kit` macro so that you can buy a lot of things you normally do quickly.
+
+
+## Features
+A clock has been added to the top right corner of the terminal, optional with the config option ShowTerminalClock.
+
+Using the left and right arrow keys while on the terminal will make you switch between radar targets on the ships monitor. Keybinds can be changed in the game's keybinds menu.
+
+Using the up and down arrow keys will let you go through your command history to run commands again or correct typos near the end of a command without having to type the full command again. Keybinds can be changed in the game's keybinds menu.
+
+There is a synced config that allows you to change the maximum amount of items on the delivery dropship, set the maximum number of commands executable per second within macros, enable or disable commands, and change the prices for every moon, item, and unlockable.
+- All of these options will shared by the host to the rest of the players who also have the mod. Joining players are not required to have the mod, but purchases made by them will be corrected by the host and they won't be blocked from running vanilla commands.
+  - The host is not required to have the mod either, as players joining with the mod will use the default synced config options and not their set options.
+
+
+# What's Planned
+Allowing the saving and loading of macros to and from more accessible .txt files within the config folder, allowing them to be shared with others more easily.
+- Either by adding save and load macro commands, or by switching from using es3 to plain text files.
+
+Showing the entity's base health when viewing one using the `>BESTIARY` command.
+- This isn't hard if done with fixed values, but will be annoying to do dynamically, which is how I'd want to do it.
+
+Supporting translations, or mods that change text in several areas in general.
+
+Fixing the possibility of any desyncing or inconsistencies occuring caused by other mods, so that the `>RELOAD` command doesn't need to be used.
+- This will take a lot of work to get to this point.
+
+
+# Known Incompatibilities
+[Advanced Company by PotatoePet](https://thunderstore.io/c/lethal-company/p/PotatoePet/AdvancedCompany/)
+- Price changes don't sync, this has to do with how Advanced Company saves these changes, not making it possible for me to access them.
+  - The creator of the mod has plans to make an api that will allow me and other mod creators to get and modify these prices.
+
+
+# Contact
+@lammas123 on Discord - [Lethal Company Modding Discord](https://discord.com/invite/lcmod) - [lammOS Thread](https://discord.com/channels/1168655651455639582/1196941743673847938)
+
 
 # Changelog
+## 1.3.0
+- Made lots of changes regarding my mod's .csproj file (thanks to @nyxchrono on Discord) and upgraded to VSCode 2022, leading to me making lots of minor changes here and there with the newer IDE.
+  - Additionally, the project's .sln and .csproj files are available on the [GitHub](https://github.com/lammas321/lammOS-LethalCompany), contributions and suggestions are appreciated!
+- Split the mod's underlying code into more than one .cs file.
+- Made changes to command arguments to match more with already defined command argument standards.
+- Made changes to the results of commands that list a lot of things to , like `>STORE` and `>SCAN`, giving them padding to make prices and values aligned.
+  - The character used for this can be modified in the config using the ListPaddingChar option.
+- Made lots of changes to the results of commands, making them more consistent throughout, giving them more detail, and making them feel less empty.
+- Moved the `>CODES` and `>CODE` command to the new Alphanumeric Codes category.
+- Made it easier to understand the `>CODE` command and why it's there.
+- Added the `>WAIT` command to be used within macros to make the macro wait for a given amount of time.
+  - This command doesn't do anything normally, and is only used for macros.
+- Added a MacroInstructionsPerSecond synced config option, allowing the host to customize how many commands can be ran through a macro per second.
+- Added host to client version mismatch warnings for the synced config to the console, this will help with diagnosing problems related to hosts and clients not having the same version of the mod.
+- Changed the default value of all price modifiers in the synced config to -1. A value of -1 will signify that the multiplier should be ignored and to use the default price.
+- Made several changed to how I load and cache game related information into lammOS on start.
+  - Fixed an incompatibility with [More_Suits by x753](https://thunderstore.io/c/lethal-company/p/x753/More_Suits/) by improving how purchasable unlockables are loaded into lammOS.
+  - Fixed a potential error that could have occured if modded planets didn't follow the same naming scheme that vanilla ones did.
+- Made lots of changes to how commands are parsed and executed, removing unnecessary uses of the ref keyword and passes of the whole TerminalNode when just passing and or returning a string result would suffice.
+- Fixed a typo I've been making throughout my code regarding 'purchaseables', it's purchasables haha.
+
 ## 1.2.3
 - Added a helpful description to all of the first config options in the Synced config per category.
 - Actually fixed the issue with items not being properly discounted.
@@ -74,7 +133,7 @@ I also pre-patched the Terminal.TextPostProcess method to do nothing by default,
 - Improved the valid radar targets filter on the `>TARGETS` command to use the same one that switching to targets on the monitor actually uses, rather than filtering out names that start with "Player #".
 - Cached the Terminal object as a static property so that I don't need to use the slower FindObjectOfType method to get it in some places.
 - Replaced the usages of FindObjectOfType<StartOfRound>() with StartOfRound.Instance.
-- Fixed purchaseable items not properly being discounted in the store or while purchasing items. (How did I miss this??)
+- Fixed purchasable items not properly being discounted in the store or while purchasing items. (How did I miss this??)
 - Fixed using the left arrow to switch to previous radar targets skipping some targets when it shouldn't.
 
 ## 1.2.1
