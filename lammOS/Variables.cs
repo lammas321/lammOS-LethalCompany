@@ -31,21 +31,30 @@ namespace lammOS.Variables
             public TerminalNode node;
             public string name;
             public string shortName;
+            public string styledName;
             public string shortestChars;
 
-            public Moon(string id, SelectableLevel level, TerminalNode node)
+            public Moon(string id, SelectableLevel level, TerminalNode node, string shortName)
             {
                 this.id = id;
                 this.level = level;
                 this.node = node;
                 name = level.PlanetName;
+                this.shortName = shortName;
+
+                if (name == shortName)
+                {
+                    styledName = name;
+                    return;
+                }
+
                 int split = name.IndexOf(' ');
                 if (split == -1)
                 {
-                    shortName = name;
+                    styledName = name;
                     return;
                 }
-                shortName = name.Substring(split + 1);
+                styledName = name.Substring(0, split) + "-" + name.Substring(split + 1);
             }
         }
         public class PurchasableItem
@@ -184,38 +193,66 @@ namespace lammOS.Variables
             moons = new();
             moonNameToMoonNode = new();
             entitiesWithoutEntry = new();
+
+            Dictionary<int, bool> foundLevels = new();
             for (int i = 0; i < StartOfRound.Instance.levels.Length; i++)
             {
-                for (int j = 0; j < terminalKeywords["route"].compatibleNouns.Length; j++)
+                foundLevels.Add(i, false);
+            }
+
+            foreach (CompatibleNoun cn in terminalKeywords["route"].compatibleNouns)
+            {
+                if (moons.ContainsKey(cn.noun.word))
                 {
-                    if (StartOfRound.Instance.levels[i].PlanetName.Substring(StartOfRound.Instance.levels[i].PlanetName.IndexOf(" ") + 1).ToLower() == terminalKeywords["route"].compatibleNouns[j].noun.word || (StartOfRound.Instance.levels[i].PlanetName == "71 Gordion" && terminalKeywords["route"].compatibleNouns[j].noun.word == "company"))
+                    lammOS.Logger.LogWarning("A moon has already been added with the id '" + cn.noun.word + "'.");
+                    continue;
+                }
+                if (cn.result.terminalOptions[1].result.buyRerouteToMoon < 0 || cn.result.terminalOptions[1].result.buyRerouteToMoon >= StartOfRound.Instance.levels.Length)
+                {
+                    lammOS.Logger.LogWarning("Moon terminal node '" + cn.noun.word + "' with a selectable level index of " + cn.result.terminalOptions[1].result.buyRerouteToMoon.ToString() + " is out of the selectable level range: 0-" + (StartOfRound.Instance.levels.Length - 1).ToString());
+                    continue;
+                }
+
+                SelectableLevel level = StartOfRound.Instance.levels[cn.result.terminalOptions[1].result.buyRerouteToMoon];
+                string shortName = level.PlanetName.TrimStart(['0', '1', '2', '3', '4', '5', '6', '7', '8', '9']);
+                if (shortName.IndexOf(' ') == 0)
+                {
+                    shortName = shortName.Substring(1);
+                }
+
+                foundLevels[cn.result.terminalOptions[1].result.buyRerouteToMoon] = true;
+                Moon moon = new(cn.noun.word, level, cn.result.terminalOptions[1].result, shortName);
+                moons.Add(moon.id, moon);
+                moonNameToMoonNode.Add(level.PlanetName.ToLower(), moon.id);
+
+                foreach (SpawnableEnemyWithRarity entity in moon.level.Enemies)
+                {
+                    if (!entitiesWithoutEntry.Contains(entity.enemyType))
                     {
-                        Moon moon = new(terminalKeywords["route"].compatibleNouns[j].noun.word, StartOfRound.Instance.levels[i], terminalKeywords["route"].compatibleNouns[j].result.terminalOptions[1].result);
-                        moons.Add(moon.id, moon);
-                        moonNameToMoonNode.Add(StartOfRound.Instance.levels[i].PlanetName.ToLower(), moon.id);
-                        foreach (SpawnableEnemyWithRarity entity in moon.level.Enemies)
-                        {
-                            if (!entitiesWithoutEntry.Contains(entity.enemyType))
-                            {
-                                entitiesWithoutEntry.Add(entity.enemyType);
-                            }
-                        }
-                        foreach (SpawnableEnemyWithRarity entity in moon.level.OutsideEnemies)
-                        {
-                            if (!entitiesWithoutEntry.Contains(entity.enemyType))
-                            {
-                                entitiesWithoutEntry.Add(entity.enemyType);
-                            }
-                        }
-                        foreach (SpawnableEnemyWithRarity entity in moon.level.DaytimeEnemies)
-                        {
-                            if (!entitiesWithoutEntry.Contains(entity.enemyType))
-                            {
-                                entitiesWithoutEntry.Add(entity.enemyType);
-                            }
-                        }
-                        break;
+                        entitiesWithoutEntry.Add(entity.enemyType);
                     }
+                }
+                foreach (SpawnableEnemyWithRarity entity in moon.level.OutsideEnemies)
+                {
+                    if (!entitiesWithoutEntry.Contains(entity.enemyType))
+                    {
+                        entitiesWithoutEntry.Add(entity.enemyType);
+                    }
+                }
+                foreach (SpawnableEnemyWithRarity entity in moon.level.DaytimeEnemies)
+                {
+                    if (!entitiesWithoutEntry.Contains(entity.enemyType))
+                    {
+                        entitiesWithoutEntry.Add(entity.enemyType);
+                    }
+                }
+            }
+
+            foreach (int levelId in foundLevels.Keys)
+            {
+                if (!foundLevels[levelId])
+                {
+                    lammOS.Logger.LogWarning("Could not find a matching terminal node for the moon: " + StartOfRound.Instance.levels[levelId].PlanetName);
                 }
             }
 
