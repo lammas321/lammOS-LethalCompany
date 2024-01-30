@@ -12,7 +12,7 @@ using static lammOS.Variables.Variables;
 
 namespace lammOS
 {
-    [BepInPlugin("lammas123.lammOS", "lammOS", "1.3.0")]
+    [BepInPlugin("lammas123.lammOS", "lammOS", "1.3.1")]
     [BepInDependency("com.rune580.LethalCompanyInputUtils", MinimumDependencyVersion: "0.6.1")]
     public class lammOS : BaseUnityPlugin
     {

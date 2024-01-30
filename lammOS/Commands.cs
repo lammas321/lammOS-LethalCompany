@@ -860,7 +860,7 @@ namespace lammOS.Commands
                     }
                 }
 
-                node.displayText = moon.name.Replace(" ", "-") + MoonsCommand.GenerateMoonIndexWeather(moon) + MoonsCommand.GenerateMoonIndexCost(moon) + "\n\n" + moon.level.LevelDescription;
+                node.displayText = moon.styledName + MoonsCommand.GenerateMoonIndexWeather(moon) + MoonsCommand.GenerateMoonIndexCost(moon) + "\n\n" + moon.level.LevelDescription;
 
                 if (moon.level.spawnEnemiesAndScrap)
                 {
@@ -971,7 +971,7 @@ namespace lammOS.Commands
                     terminal.groupCredits -= cost;
                     StartOfRound.Instance.ChangeLevelServerRpc(moon.node.buyRerouteToMoon, terminal.groupCredits);
                 }
-                node.displayText = "Routing autopilot to " + moon.name + ".";
+                node.displayText = "Routing autopilot to " + moon.styledName + ".";
             }
 
             public override void Confirmed(Terminal terminal, ref TerminalNode node)
@@ -2418,7 +2418,7 @@ namespace lammOS.Commands
                     if (instruction.StartsWith("wait"))
                     {
                         float time = 1f;
-                        int split = instruction.IndexOf(" ");
+                        int split = instruction.IndexOf(' ');
                         if (split != -1)
                         {
                             float.TryParse(instruction.Substring(split + 1), out time);
@@ -2805,7 +2805,7 @@ namespace lammOS.Commands
             public override void Execute(Terminal terminal, string input, ref TerminalNode node)
             {
                 input = input.ToLower();
-                int split = input.IndexOf(" ");
+                int split = input.IndexOf(' ');
                 if (split == -1)
                 {
                     split = input.Length;
