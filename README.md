@@ -102,6 +102,11 @@ Fixing the possibility of any desyncing or inconsistencies occuring caused by ot
 
 
 # Changelog
+## 1.3.1
+- Reworked parsing and caching of moon's information to be much better, making it more like how the game already grabs this information by default.
+  - I've tested this with all of the moons on the first page of r2modman after searching "moon", and all of them worked!
+- Added a styledName property to the Variables.Moon class, which includes a - instead of a space between the moon's number and name, only if the moon's name starts with numbers and a space, otherwise it is the same as the moon's base name.
+
 ## 1.3.0
 - Made lots of changes regarding my mod's .csproj file (thanks to @nyxchrono on Discord) and upgraded to VSCode 2022, leading to me making lots of minor changes here and there with the newer IDE.
   - Additionally, the project's .sln and .csproj files are available on the [GitHub](https://github.com/lammas321/lammOS-LethalCompany), contributions and suggestions are appreciated!
