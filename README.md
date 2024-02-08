@@ -4,11 +4,14 @@ lammOS is a mod that reworks how the terminal commands work, changing how many o
 # What's Reworked
 The way commands are parsed and processed by the terminal have been reworked, making using and adding new content to the terminal a smoother experience.
 - This has the negative side effect of command results not being 100% similar or synced with the vanilla game or other mods, especially if the game updates or mods change or add content making any drastic changes.
-- This will also cause commands added or changed by other mods that use nodes and keywords, what the game normally uses, to *potentially* be unstable with the terminal, though some will still work with minimal issues. It is possible for other mods to add their own lammOS compatible commands with an optional or required dependency if they so choose though, minimizing all potential issues.
+- This will also cause commands added or changed by other mods to *potentially* be unusable with the terminal, though some will still work with minimal issues. It is possible for other mods to add their own lammOS compatible commands with an optional or required dependency if they so choose though, minimizing all potential issues.
 
 ## Specifics
-More specifically, for modders that are curious, what I did is pre-patch the Terminal.ParsePlayerSentence method to return my own TerminalNode that does basically nothing unless I need it to, such as to use it's displayText property. This does not run any of the code in the actual Terminal.ParsePlayerSentence method, instead I parse the text myself and run the corresponding command's Execute method to give it it's functionality, then it goes on to call the Terminal.LoadNewNode method as normal to update the terminal's on screen text.
-- I also pre-patched the Terminal.TextPostProcess method to do nothing by default, as it's functionality is not needed with this mod. This is toggleable within the config for compatibility with other mods however.
+More specifically for modders or others that are curious, what I did is pre-patch the Terminal.OnSubmit method to conditionally do nothing if the player enters a valid lammOS command, which will then run my own mod's NewTerminal.OnSubmit method and thus executing the entered command. Otherwise, it'll run the default Terminal.OnSubmit method and check for terminal keyword matches as usual.
+- lammOS also removes most of the vanilla terminal keywords, so that users aren't routing to moons or buying items with the terminal keywords.
+
+I also pre-patched the Terminal.TextChanged method to run my own NewTerminal.OnTextChanged method, which is functionally similar but different so that it works better with lammOS.
+- Several other Terminal methods have been patched, but are less signifigant and are only there to prevent bugs or weird visuals.
 
 
 # What's Changed
@@ -38,20 +41,19 @@ You can change how many characters you must enter for the terminal to understand
 - Setting the CharsToAutocomplete config option to a value above the character length of certain options will require you to type the full name of the option.
 - You can enable the ShowMinimumChars config option to show the minimum number of characters you need to enter next to the names of things in lists, such as on the `>MOONS` and `>STORE` pages.
 
-You can choose the padding character used in commands that show lists of things with the config option ListPaddingChar.
-
-You can choose whether to show percentages (20%) or rarities (1/5) for things involving chance with the config option ShowPercentagesOrRarity.
-
 
 # What's New
 ## Commands
 The `>SHORTCUTS` command, which will list all of the shortcuts associated with every command.
 
-The `>TARGETS` command, which lists all of the radar targets you can view on the monitor or terminal with `>MONITOR`.
+The `>TARGETS` command, which lists all of the radar targets you can view on the monitor, or the terminal with the `>MONITOR` command.
 
 A `>CLEAR` command that will clear all text from the terminal, useful if you can't see the monitor while the monitor is on screen after using the `>MONITOR` command.
 
 The `>CODES` command, this lists all of the alphanumeric codes you can enter and what they are associated with (doors, turrets, or landmines) on the moon you are currently on.
+
+Entering an alphanumeric code can now take an argument to decide what it should do. These options are Default, Toggle, Deactivate, and Activate.
+- All but the default option will be disabled by default and will require their respective `alphanumericcode+<argument>` commands to be enabled in the synced config.
 
 The `>DOOR` and `>LIGHTS` commands to toggle the ship's door open or closed and lights on or off.
 The `>TP` and `>ITP` commands to remotely activate the teleporter and inverse teleporter.
@@ -63,32 +65,36 @@ The `>RELOAD` command, to reload the config and fix any inconsistencies experien
   - Entity power and the max that can spawn
   - Ect.
 
-You can create and run macros that'll run a set of commands you give it (`>CREATE-MACRO` and `>RUN-MACRO`), great for setting up a `kit` macro so that you can buy a lot of things you normally do quickly.
+You can create and run macros that'll run a set of commands you give them (`>CREATE-MACRO` and `>RUN-MACRO`), great for setting up a 'kit' macro so that you can buy a lot of things you normally do quickly.
 
 
-## Features
+## Config Options and Keybinds
 A clock has been added to the top right corner of the terminal, optional with the config option ShowTerminalClock.
 
 Using the left and right arrow keys while on the terminal will make you switch between radar targets on the ships monitor. Keybinds can be changed in the game's keybinds menu.
 
 Using the up and down arrow keys will let you go through your command history to run commands again or correct typos near the end of a command without having to type the full command again. Keybinds can be changed in the game's keybinds menu.
 
+You can choose the padding character used in commands that show lists of things with the config option ListPaddingChar.
+
+You can choose whether to show percentages (20%) or rarities (1/5) for things involving chance with the config option ShowPercentagesOrRarity.
+
 There is a synced config that allows you to change the maximum amount of items on the delivery dropship, set the maximum number of commands executable per second within macros, enable or disable commands, and change the prices for every moon, item, and unlockable.
-- All of these options will shared by the host to the rest of the players who also have the mod. Joining players are not required to have the mod, but purchases made by them will be corrected by the host and they won't be blocked from running vanilla commands.
+- All of these options will be shared by the host to the rest of the players who also have the mod. Joining players are not required to have the mod, but purchases made by them will be corrected by the host and they won't be blocked from running vanilla commands.
   - The host is not required to have the mod either, as players joining with the mod will use the default synced config options and not their set options.
+
+You can optionally disable the introduction speech with the DisableIntroSpeech config option.
 
 
 # What's Planned
-Allowing the saving and loading of macros to and from more accessible .txt files within the config folder, allowing them to be shared with others more easily.
-- Either by adding save and load macro commands, or by switching from using es3 to plain text files.
+Potentially changing more of the text within the terminal to use other colors.
+
+Maybe adding conditional or looping instructions to macros? Maybe variables and being able to take user input?
 
 Showing the entity's base health when viewing one using the `>BESTIARY` command.
 - This isn't hard if done with fixed values, but will be annoying to do dynamically, which is how I'd want to do it.
 
 Supporting translations, or mods that change text in several areas in general.
-
-Fixing the possibility of any desyncing or inconsistencies occuring caused by other mods, so that the `>RELOAD` command doesn't need to be used.
-- This will take a lot of work to get to this point.
 
 
 # Known Incompatibilities
@@ -96,12 +102,47 @@ Fixing the possibility of any desyncing or inconsistencies occuring caused by ot
 - Price changes don't sync, this has to do with how Advanced Company saves these changes, not making it possible for me to access them.
   - The creator of the mod has plans to make an api that will allow me and other mod creators to get and modify these prices.
 
+[GeneralImprovements by ShaosilGaming](https://thunderstore.io/c/lethal-company/p/ShaosilGaming/GeneralImprovements/)
+- When GeneralImprovements' UseBetterMonitors config option is set to true, it breaks the cameras from [Helmet_Cameras by RickArg](https://thunderstore.io/c/lethal-company/p/RickArg/Helmet_Cameras/) and [Solos_Bodycams by CapyCat](https://thunderstore.io/c/lethal-company/p/CapyCat/Solos_Bodycams/), making me unable to display their cameras on the monitor after using the `>MONITOR` command.
+  - The [OpenBodyCams mod by Zaggy1024](https://thunderstore.io/c/lethal-company/p/Zaggy1024/OpenBodyCams/) is not broken by GeneralImprovements, as OpenBodyCams has compatibility for GeneralImprovements built in, and can be viewed on the terminal via the `>MONITOR` command as of v1.4.0 (so long as OpenBodyCams' GeneralImprovementsBetterMonitorIndex config option is set to 0 or 14, placing the camera on the bottom right monitor).
+
+[OpenBodyCams by Zaggy1024](https://thunderstore.io/c/lethal-company/p/Zaggy1024/OpenBodyCams/)
+- The helmet camera can sometimes become frozen on the terminal when using the `>MONITOR` command if the monitor isn't visible on the actual monitor.
+  - I think it may be caused by OpenBodyCams freezing the camera to improve performance if it isn't visible on the monitor, though I'm not entirely sure.
+
 
 # Contact
 @lammas123 on Discord - [Lethal Company Modding Discord](https://discord.com/invite/lcmod) - [lammOS Thread](https://discord.com/channels/1168655651455639582/1196941743673847938)
 
 
 # Changelog
+## 1.4.0
+- Changed the file macros are saved within from a .es3 file to a plain .txt file in the config folder, so they are easier to share with others and save elsewhere.
+  - Your existing .es3 macros file will be converted to a .txt file upon launching the game, saving your existing macros. This functionality will be removed eventually, so be sure to launch the game soon to convert the file if you want to save your macros!
+- The `>CODES` command will now show if doors are open or closed, and if turrets or landmines are active or deactivated.
+- The `>TARGETS` command will now specify if a target is a radar booster.
+- Added an error to let clients know that the `>EJECT` command only able to be used by the host. Not that they could use it before as the game would prevent it, but they had no reason to know that it was prevented besides nothing happening and an error log in the console.
+- Added a light blue text color to my name on the startup screen, as well as a red text color for any lammOS command errors.
+- Made the `>HELP` command's page automatically show any time after the first time you open the terminal after loading a save or joining a game.
+- This update improves compatibility with a couple of terminal based mods that didn't work with lammOS before, such as [suitsTerminal by darmuh](https://thunderstore.io/c/lethal-company/p/darmuh/suitsTerminal/).
+- Fixed an incompatibility with [Mimics by x753](https://thunderstore.io/c/lethal-company/p/x753/Mimics/) where the Mimic's bestiary entry couldn't be added, as the mod doesn't add the mimic entity in the same manner that other mods do.
+- Slightly fixed some incompatibility with [GeneralImprovements by ShaosilGaming](https://thunderstore.io/c/lethal-company/p/ShaosilGaming/GeneralImprovements/), read the `Known Incompatibilities` section for GeneralImprovements for more information.
+- Fixed a bug that would cause items you purchased as a client to not get sent to and synced with the host if you purchased exactly a multiple of 12 plus 1 (1, 13, 25, ect) until you purchased more.
+- Changed the MacroInstructionsPerSecond synced config option from an integer to a float, so that instructions per second don't have to be whole numbers nor at least once per second.
+- Removed the DisableTextPostProcess config option, as lammOS no longer needs to disable it.
+- Added the DisableIntroSpeech config option, so that you don't have to stop it thousands of times during testing and go insane, like me :D
+- Publicized the game's assembly within the .csproj file to be able to interact with the terminal more closely.
+- Switched to pre-patching and preventing default execution of the Terminal.OnSubmit method conditionally, based on if a lammOS command was found and ran, otherwise it'll allow default execution of the Terminal.OnSubmit method.
+  - The mod now removes terminal keywords that are already implemented via lammOS commands, to prevent getting around the functionality implemented by lammOS.
+- Created the NewTerminal static class with a few helper methods to make interacting with the new terminal easier.
+- Made several improvements to how commands are made and handled via lammOS.
+  - Commands no longer return or use terminal nodes, they now directly interact with the terminal's methods through helper methods in the new NewTerminal class.
+- Added a static helper method to the Command class for formatting any type of list with padding. For example, the responses of `>MOONS` and `>STORE` commands.
+- Varied the types of commands there can be internally by creating more derived command classes.
+- Overhauled how commands block command execution, for example by prompting confirmation or by disallowing input for a period of time.
+  - The `>WAIT` command now functions on its own without the need to be used within a macro, if you'd ever want to use it outside of a macro *shrug*.
+- Made changes to prevent the user from entering rich text (custom colors, size changes, ect) into the terminal, preventing strange visual bugs that could occur when the user did so.
+
 ## 1.3.1
 - Reworked parsing and caching of moon's information to be much better, making it more like how the game already grabs this information by default.
   - I've tested this with all of the moons on the first page of r2modman after searching "moon", and all of them worked!
