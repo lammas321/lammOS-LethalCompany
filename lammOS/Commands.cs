@@ -1,16 +1,24 @@
 ﻿using GameNetcodeStuff;
-using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using static lammOS.lammOS;
 using static lammOS.Macros.Macros;
+using static lammOS.NewTerminal.NewTerminal;
 using static lammOS.Variables.Variables;
 
 namespace lammOS.Commands
 {
     public static class Commands
     {
+        public enum BlockingLevel
+        {
+            None,
+            UntilSubmission,
+            UntilTyping,
+            All
+        }
+
         internal static Dictionary<string, Command> commands;
         internal static Dictionary<string, string> shortcuts;
 
@@ -104,110 +112,80 @@ namespace lammOS.Commands
             return shortcuts.Remove(shortcut);
         }
 
-        public static Command currentCommand { get; internal set; } = null;
-        public static Coroutine runningMacroCoroutine { get; internal set; } = null;
-        public static bool macroAppendingText = false;
-
-        internal static void HandleCommand(Terminal terminal, string input, ref TerminalNode node)
-        {
-            if (currentCommand == null)
-            {
-                int offset = input.IndexOf(' ');
-                if (offset == -1)
-                {
-                    offset = input.Length;
-                }
-
-                Command.Handle(input.Substring(0, offset), terminal, input.Substring(offset == input.Length ? offset : offset + 1), ref node);
-            }
-            else if (currentCommand is ConfirmationCommand)
-            {
-                ConfirmationCommand.Handle(terminal, input, ref node);
-                currentCommand = null;
-            }
-        }
-        internal static void HandleCommandResult(Terminal terminal, TerminalNode node)
-        {
-            if (!node.clearPreviousText)
-            {
-                node.clearPreviousText = true;
-                node.displayText = terminal.screenText.text + "\n\n" + node.displayText;
-            }
-
-            node.maxCharactersToType = 99999;
-            node.displayText = node.displayText.TrimStart('\n');
-
-            if (node.displayText == ">")
-            {
-                return;
-            }
-
-            if (node.displayText == "")
-            {
-                node.displayText = ">";
-                return;
-            }
-
-            if (!node.displayText.EndsWith(">"))
-            {
-                node.displayText = node.displayText.TrimEnd('\n') + "\n\n>";
-            }
-        }
-
         internal static void AddCommands()
         {
             AddCommand(new HelpCommand());
             AddCommand(new ShortcutsCommand());
-
+            
             AddCommand(new MoonsCommand());
             AddCommand(new MoonCommand());
             AddCommand(new RouteCommand());
-
+            
             AddCommand(new StoreCommand());
             AddCommand(new BuyCommand());
             AddCommand(new StorageCommand());
             AddCommand(new RetrieveCommand());
-
+            
             AddCommand(new BestiaryCommand());
             AddCommand(new SigurdCommand());
-
+            
+            AddCommand(new CodesCommand());
             AddCommand(new MonitorCommand());
             AddCommand(new TargetsCommand());
             AddCommand(new SwitchCommand());
             AddCommand(new PingCommand());
             AddCommand(new FlashCommand());
-
-            AddCommand(new CodesCommand());
-            AddCommand(new DummyCommand("Alphanumeric Codes", "code-default", "Default functionality, toggles the state of doors and disables landmines and turrets on the radar map with the given code.", "", true));
-            AddCommand(new DummyCommand("Alphanumeric Codes", "code-toggle", "Specifically only toggles the state of doors on the radar map with the given code.", "", true, false));
-            AddCommand(new DummyCommand("Alphanumeric Codes", "code-deactivate", "Specifically only deactivates mines and turrets on the radar map with the given code.", "", true, false));
-            AddCommand(new DummyCommand("Alphanumeric Codes", "code-activate", "Specifically only activates mines and turrets on the radar map with the given code, causing them to explode or go haywire. The Company does not recommend using this option.", "", true, false));
-            AddCommand(new DummyCommand("Alphanumeric Codes", "code", "Interact with objects on the radar map by typing in their alphanumeric code, such as 'B3', 'H5', ect. Enter 'HELP CODE-<Argument>' to see if an argument is enabled or disabled by the host.\n\nDefault:\n * " + GetCommand("code-default").description + "\n\nToggle:\n * " + GetCommand("code-toggle").description + "\n\nDeactivate:\n * " + GetCommand("code-deactivate").description + "\n\nActivate:\n * " + GetCommand("code-activate").description, "[Default|Toggle|Deactivate|Activate]"));
-
+            
             AddCommand(new LandCommand());
             AddCommand(new LaunchCommand());
             AddCommand(new DoorCommand());
             AddCommand(new LightsCommand());
             AddCommand(new TeleporterCommand());
             AddCommand(new InverseTeleporterCommand());
-
+            
             AddCommand(new ScanCommand());
             AddCommand(new TransmitCommand());
             AddCommand(new ClearCommand());
             AddCommand(new ReloadCommand());
             AddCommand(new EjectCommand());
-
+            AddCommand(new WaitCommand());
+            
             AddCommand(new MacrosCommand());
             AddCommand(new MacroCommand());
             AddCommand(new RunMacroCommand());
             AddCommand(new CreateMacroCommand());
             AddCommand(new EditMacroCommand());
             AddCommand(new DeleteMacroCommand());
-            AddCommand(new DummyCommand("Macros", "wait", "This command doesn't do anything normally, and is only supposed to be used within macros. When used within a macro, ", "[Seconds]"));
-
+            
             AddCommand(new DebugCommand());
+
+            AddCommand(new CommandArgument("alphanumericcode", "default"));
+            AddCommand(new CommandArgument("alphanumericcode", "toggle", false));
+            AddCommand(new CommandArgument("alphanumericcode", "deactivate", false));
+            AddCommand(new CommandArgument("alphanumericcode", "activate", false));
         }
 
+        public static bool hasSetup { get; internal set; } = false;
+        internal static void AddCodeCommands()
+        {
+            foreach (TerminalKeyword keyword in terminalKeywords.Values)
+            {
+                if (keyword.accessTerminalObjects)
+                {
+                    AddCommand(new AlphanumericCodeCommand(keyword.word));
+                }
+            }
+        }
+        internal static void AddCompatibilityCommands()
+        {
+            if (BepInEx.Bootstrap.Chainloader.PluginInfos.ContainsKey("com.malco.lethalcompany.moreshipupgrades"))
+            {
+                lammOS.Logger.LogInfo("Adding Lategame Upgrades compatibility commands");
+                AddCommand(new LategameCompatibiltyCommand());
+                AddCommand(new LguCompatibiltyCommand());
+            }
+        }
+        
         public class HelpCommand : Command
         {
             public HelpCommand()
@@ -289,11 +267,11 @@ namespace lammOS.Commands
                 return result + "\n * " + command.description;
             }
 
-            public override void Execute(Terminal terminal, string input, ref TerminalNode node)
+            public override void Execute(Terminal terminal, string input)
             {
                 if (input == "")
                 {
-                    node.displayText = GenerateHelpPage();
+                    SetTerminalText(GenerateHelpPage());
                     return;
                 }
 
@@ -305,11 +283,11 @@ namespace lammOS.Commands
                 Command command = GetCommand(input);
                 if (command == null)
                 {
-                    ErrorResponse("No command command found with id: '" + input + "'", node);
+                    ErrorResponse("No command command found with id: '" + input + "'");
                     return;
                 }
 
-                node.displayText = GenerateCommandHelp(command);
+                SetTerminalText(GenerateCommandHelp(command));
             }
         }
         public class ShortcutsCommand : Command
@@ -322,7 +300,7 @@ namespace lammOS.Commands
                 AddShortcut("sh", id);
             }
 
-            public override void Execute(Terminal terminal, string input, ref TerminalNode node)
+            public override void Execute(Terminal terminal, string input)
             {
                 int length = 0;
                 foreach (string shortcut in GetShortcuts())
@@ -353,23 +331,24 @@ namespace lammOS.Commands
                     categories[command.category].Add(">" + (command.id.ToUpper() + " ").PadRight(length, ListPaddingCharValue) + " >" + shortcut.ToUpper() + "\n");
                 }
 
-                node.displayText = "Shortcuts:";
+                string result = "";
                 foreach (string category in categories.Keys)
                 {
-                    node.displayText += "\n [" + category + "]\n";
+                    result += "\n [" + category + "]\n";
 
                     foreach (string shortcut in categories[category])
                     {
-                        node.displayText += shortcut;
+                        result += shortcut;
                     }
                 }
-                if (node.displayText == "Shortcuts:")
+                if (result == "")
                 {
-                    node.displayText += "\nThere are no shortcuts.";
+                    result = "There are no shortcuts for any commands.";
                 }
+                SetTerminalText(result);
             }
         }
-
+        
         public class MoonsCommand : Command
         {
             public MoonsCommand()
@@ -386,89 +365,48 @@ namespace lammOS.Commands
                 {
                     return " (" + moon.level.currentWeather.ToString() + ") ";
                 }
-                return "";
+                if (!moon.level.spawnEnemiesAndScrap)
+                {
+                    return " (" + ((int)(StartOfRound.Instance.companyBuyingRate * 100f)).ToString() + "%) ";
+                }
+                return null;
             }
             public static string GenerateMoonIndexCost(Moon moon)
             {
                 int cost = GetMoonCost(moon.id);
-                if (cost != 0)
-                {
-                    return cost.ToString();
-                }
-                return "";
-            }
-            public static string GenerateMoonIndex(Moon moon, int nameLength, int weatherLength, int costLength)
-            {
-                string name = "";
-                if (ShowMinimumCharsValue)
-                {
-                    name = "(" + moon.shortestChars + ") ";
-                }
-                name = moon.shortName + " ";
-                string weather = GenerateMoonIndexWeather(moon);
-                string cost = GenerateMoonIndexCost(moon);
-                if (weather == "")
-                {
-                    if (cost == "")
-                    {
-                        return name;
-                    }
-                    else
-                    {
-                        return name.PadRight(nameLength, ListPaddingCharValue) + new string(ListPaddingCharValue, weatherLength) + " $" + cost.PadLeft(costLength);
-                    }
-                }
-                else
-                {
-                    if (cost == "")
-                    {
-                        return name.PadRight(nameLength, ListPaddingCharValue) + weather;
-                    }
-                    else
-                    {
-                        return name.PadRight(nameLength, ListPaddingCharValue) + weather.PadRight(weatherLength, ListPaddingCharValue) + " $" + cost.PadLeft(costLength);
-                    }
-                }
-            }
-            public static string GenerateMoonsList(List<Moon> moonsList, int nameLength, int weatherLength, int costLength)
-            {
-                string result = " * ";
-                if (ShowMinimumCharsValue)
-                {
-                    result += "(" + moons["company"].shortestChars + ") ";
-                }
-                result += "The Company Building ".PadRight(nameLength, ListPaddingCharValue);
-
-                int cost = GetMoonCost("company");
                 if (cost == 0)
                 {
-                    result += " (" + ((int)(StartOfRound.Instance.companyBuyingRate * 100f)).ToString() + "%)";
+                    return null;
                 }
-                else
+                return cost.ToString();
+            }
+            public static void GenerateMoonIndex(Moon moon, List<List<string>> itemLists)
+            {
+                itemLists[0].Add((ShowMinimumCharsValue ? "(" + moon.shortestChars + ") " : "") + (moon.name == "71 Gordion" ? "The Company building" : moon.shortName) + " ");
+                itemLists[1].Add(GenerateMoonIndexWeather(moon));
+                itemLists[2].Add(GenerateMoonIndexCost(moon));
+            }
+            public static string GenerateMoonsList(List<Moon> moonsList)
+            {
+                List<List<string>> itemLists = new()
                 {
-                    result += (" (" + ((int)(StartOfRound.Instance.companyBuyingRate * 100f)).ToString() + "%) ").PadRight(weatherLength, ListPaddingCharValue) + " $" + cost.ToString().PadLeft(costLength);
-                }
+                    new(),
+                    new(),
+                    new()
+                };
 
                 foreach (Moon moon in moonsList)
                 {
-                    result += "\n * " + GenerateMoonIndex(moon, nameLength, weatherLength, costLength);
+                    GenerateMoonIndex(moon, itemLists);
                 }
-                return result;
+
+                return HandleListPadding(itemLists, new List<string>() { " * {ITEM}", "{ITEM}", " ${ITEM} " }, new List<string>() { "", "", "right" } );
             }
 
-            public override void Execute(Terminal terminal, string input, ref TerminalNode node)
+            public override void Execute(Terminal terminal, string input)
             {
-                node.displayText = "Welcome to the exomoons catalogue.\nUse the MOON [Moon] command for more details regarding a moon, and use the ROUTE <Moon> command to route the autopilot to a moon of your choice.\n";
-
-                int nameLength = 21;
-                if (ShowMinimumCharsValue)
-                {
-                    nameLength += ("(" + moons["company"].shortestChars + ") ").Length;
-                }
-                int weatherLength = 3 + ((int)(StartOfRound.Instance.companyBuyingRate * 100f)).ToString().Length;
-                int costLength = 0;
-
                 List<Moon> moonsList = new();
+                moonsList.Add(moons["company"]);
                 foreach (SelectableLevel level in terminal.moonsCatalogueList)
                 {
                     Moon moon = null;
@@ -486,32 +424,10 @@ namespace lammOS.Commands
                         continue;
                     }
 
-                    string name = moon.shortName;
-                    if (ShowMinimumCharsValue)
-                    {
-                        name = "(" + moon.shortestChars + ") " + name;
-                    }
-                    if (name.Length + 1 > nameLength)
-                    {
-                        nameLength = name.Length + 1;
-                    }
-
-                    string weather = GenerateMoonIndexWeather(moon);
-                    if (weather.Length > weatherLength)
-                    {
-                        weatherLength = weather.Length;
-                    }
-
-                    string cost = GenerateMoonIndexCost(moon);
-                    if (cost.Length > costLength)
-                    {
-                        costLength = cost.Length;
-                    }
-
                     moonsList.Add(moon);
                 }
 
-                node.displayText += "+" + new string('-', nameLength + weatherLength + costLength + 4) + "+\n" + GenerateMoonsList(moonsList, nameLength, weatherLength, costLength);
+                SetTerminalText("Welcome to the exomoons catalogue.\nUse the MOON [Moon] command for more details regarding a moon, and use the ROUTE <Moon> command to route the autopilot to a moon of your choice.\n" + GenerateMoonsList(moonsList));
             }
         }
         public class MoonCommand : Command
@@ -578,12 +494,13 @@ namespace lammOS.Commands
             }
             public static string GenerateDetailedScrap(Moon moon)
             {
-                string result = "\n\nMin/Max Scrap: " + moon.level.minScrap.ToString() + "/" + moon.level.maxScrap.ToString() +
-                    "\nMin/Max Scrap Value: " + moon.level.minTotalScrapValue.ToString() + "/" + moon.level.maxTotalScrapValue.ToString() +
-                    "\n\nSpawnable Scrap:";
+                List<List<string>> itemLists = new()
+                {
+                    new(),
+                    new()
+                };
 
                 int itemRarity = 0;
-                int nameLength = 0;
                 foreach (SpawnableItemWithRarity item in moon.level.spawnableScrap)
                 {
                     if (item.rarity == 0)
@@ -591,23 +508,6 @@ namespace lammOS.Commands
                         continue;
                     }
                     itemRarity += item.rarity;
-                    if (item.spawnableItem.itemName.Length + 1 > nameLength)
-                    {
-                        nameLength = item.spawnableItem.itemName.Length + 1;
-                    }
-                }
-                int chanceLength = 0;
-                foreach (SpawnableItemWithRarity item in moon.level.spawnableScrap)
-                {
-                    if (item.rarity == 0)
-                    {
-                        continue;
-                    }
-                    string chance = GeneratePercentageOrRarity(item.rarity, itemRarity);
-                    if (chance.Length > chanceLength)
-                    {
-                        chanceLength = chance.Length;
-                    }
                 }
                 foreach (SpawnableItemWithRarity item in moon.level.spawnableScrap)
                 {
@@ -615,157 +515,60 @@ namespace lammOS.Commands
                     {
                         continue;
                     }
-                    result += "\n * " + (item.spawnableItem.itemName + " ").PadRight(nameLength, ListPaddingCharValue) + " " + GeneratePercentageOrRarity(item.rarity, itemRarity).PadLeft(chanceLength);
+                    itemLists[0].Add(item.spawnableItem.itemName + " ");
+                    itemLists[1].Add(GeneratePercentageOrRarity(item.rarity, itemRarity));
                 }
-                return result;
+
+                return "\n\nMin/Max Scrap: " + moon.level.minScrap.ToString() + "/" + moon.level.maxScrap.ToString() +
+                    "\nMin/Max Scrap Value: " + moon.level.minTotalScrapValue.ToString() + "/" + moon.level.maxTotalScrapValue.ToString() +
+                    "\n\nSpawnable Scrap:\n" + HandleListPadding(itemLists, new List<string>() { " * {ITEM}", " {ITEM} " }, new List<string>() { "", "right" }, false);
+            }
+            public static string GenerateDetailedEntityGroup(List<SpawnableEnemyWithRarity> entityList, string area)
+            {
+                if (entityList.Count == 0)
+                {
+                    return "No " + area + " entities spawn on this moon.";
+                }
+
+                List<List<string>> itemLists = new()
+                {
+                    new(),
+                    new(),
+                    new(),
+                    new()
+                };
+
+                int entityRarity = 0;
+                foreach (SpawnableEnemyWithRarity entity in entityList)
+                {
+                    if (entity.rarity == 0)
+                    {
+                        continue;
+                    }
+                    entityRarity += entity.rarity;
+                }
+                foreach (SpawnableEnemyWithRarity entity in entityList)
+                {
+                    if (entity.rarity == 0)
+                    {
+                        continue;
+                    }
+                    itemLists[0].Add(entities[entity.enemyType.enemyName].name + " ");
+                    itemLists[1].Add(" (" + entity.enemyType.PowerLevel.ToString());
+                    itemLists[2].Add(entity.enemyType.MaxCount.ToString() + ") ");
+                    itemLists[3].Add(GeneratePercentageOrRarity(entity.rarity, entityRarity));
+                }
+
+                return HandleListPadding(itemLists, new List<string>() { " * {ITEM}", "{ITEM} :", " {ITEM}", "{ITEM} " }, new List<string>() { "", "left", "right", "right" }, false);
             }
             public static string GenerateDetailedEntities(Moon moon)
             {
-                string result = "\n\nMax Entity Power:\n * Daytime: " + moon.level.maxDaytimeEnemyPowerCount.ToString() +
-                    "\n * Indoor: " + moon.level.maxEnemyPowerCount.ToString() +
+                return "\n\nMax Entity Power:\n * Daytime: " + moon.level.maxDaytimeEnemyPowerCount.ToString() +
+                    "\n * Indoor:  " + moon.level.maxEnemyPowerCount.ToString() +
                     "\n * Outdoor: " + moon.level.maxOutsideEnemyPowerCount.ToString() +
-                    "\n\nDaytime Entities: (Power : Max)";
-
-                if (moon.level.DaytimeEnemies.Count == 0)
-                {
-                    result += "\nNo daytime entities spawn on this moon.";
-                }
-                else
-                {
-                    int nameLength = 0;
-                    int daytimeEntityRarity = 0;
-                    foreach (SpawnableEnemyWithRarity entity in moon.level.DaytimeEnemies)
-                    {
-                        if (entity.rarity == 0)
-                        {
-                            continue;
-                        }
-                        daytimeEntityRarity += entity.rarity;
-
-                        string name = entities[entity.enemyType.enemyName].name + " (" + entity.enemyType.PowerLevel.ToString() + " : " + entity.enemyType.MaxCount.ToString() + ") ";
-                        if (name.Length > nameLength)
-                        {
-                            nameLength = name.Length;
-                        }
-                    }
-                    int chanceLength = 0;
-                    foreach (SpawnableEnemyWithRarity entity in moon.level.DaytimeEnemies)
-                    {
-                        if (entity.rarity == 0)
-                        {
-                            continue;
-                        }
-                        string chance = GeneratePercentageOrRarity(entity.rarity, daytimeEntityRarity);
-                        if (chance.Length > chanceLength)
-                        {
-                            chanceLength = chance.Length;
-                        }
-                    }
-                    foreach (SpawnableEnemyWithRarity entity in moon.level.DaytimeEnemies)
-                    {
-                        if (entity.rarity == 0)
-                        {
-                            continue;
-                        }
-                        result += "\n * " + (entities[entity.enemyType.enemyName].name + " (" + entity.enemyType.PowerLevel.ToString() + " : " + entity.enemyType.MaxCount.ToString() + ") ").PadRight(nameLength, ListPaddingCharValue) + " "
-                            + GeneratePercentageOrRarity(entity.rarity, daytimeEntityRarity).PadLeft(chanceLength);
-                    }
-                }
-
-                result += "\n\nInside Entities: (Power : Max)";
-                if (moon.level.Enemies.Count == 0)
-                {
-                    result += "\nNo inside entities spawn on this moon.";
-                }
-                else
-                {
-                    int nameLength = 0;
-                    int insideEntityRarity = 0;
-                    foreach (SpawnableEnemyWithRarity entity in moon.level.Enemies)
-                    {
-                        if (entity.rarity == 0)
-                        {
-                            continue;
-                        }
-                        insideEntityRarity += entity.rarity;
-
-                        string name = entities[entity.enemyType.enemyName].name + " (" + entity.enemyType.PowerLevel.ToString() + " : " + entity.enemyType.MaxCount.ToString() + ") ";
-                        if (name.Length > nameLength)
-                        {
-                            nameLength = name.Length;
-                        }
-                    }
-                    int chanceLength = 0;
-                    foreach (SpawnableEnemyWithRarity entity in moon.level.Enemies)
-                    {
-                        if (entity.rarity == 0)
-                        {
-                            continue;
-                        }
-                        string chance = GeneratePercentageOrRarity(entity.rarity, insideEntityRarity);
-                        if (chance.Length > chanceLength)
-                        {
-                            chanceLength = chance.Length;
-                        }
-                    }
-                    foreach (SpawnableEnemyWithRarity entity in moon.level.Enemies)
-                    {
-                        if (entity.rarity == 0)
-                        {
-                            continue;
-                        }
-                        result += "\n * " + (entities[entity.enemyType.enemyName].name + " (" + entity.enemyType.PowerLevel.ToString() + " : " + entity.enemyType.MaxCount.ToString() + ") ").PadRight(nameLength, ListPaddingCharValue) + " "
-                            + GeneratePercentageOrRarity(entity.rarity, insideEntityRarity).PadLeft(chanceLength);
-                    }
-                }
-
-                result += "\n\nOutside Entities: (Power : Max)";
-                if (moon.level.Enemies.Count == 0)
-                {
-                    result += "\nNo outside entities spawn on this moon.";
-                }
-                else
-                {
-                    int nameLength = 0;
-                    int outsideEntityRarity = 0;
-                    foreach (SpawnableEnemyWithRarity entity in moon.level.OutsideEnemies)
-                    {
-                        if (entity.rarity == 0)
-                        {
-                            continue;
-                        }
-                        outsideEntityRarity += entity.rarity;
-
-                        string name = entities[entity.enemyType.enemyName].name + " (" + entity.enemyType.PowerLevel.ToString() + " : " + entity.enemyType.MaxCount.ToString() + ") ";
-                        if (name.Length > nameLength)
-                        {
-                            nameLength = name.Length;
-                        }
-                    }
-                    int chanceLength = 0;
-                    foreach (SpawnableEnemyWithRarity entity in moon.level.OutsideEnemies)
-                    {
-                        if (entity.rarity == 0)
-                        {
-                            continue;
-                        }
-                        string chance = GeneratePercentageOrRarity(entity.rarity, outsideEntityRarity);
-                        if (chance.Length > chanceLength)
-                        {
-                            chanceLength = chance.Length;
-                        }
-                    }
-                    foreach (SpawnableEnemyWithRarity entity in moon.level.OutsideEnemies)
-                    {
-                        if (entity.rarity == 0)
-                        {
-                            continue;
-                        }
-                        result += "\n * " + (entities[entity.enemyType.enemyName].name + " (" + entity.enemyType.PowerLevel.ToString() + " : " + entity.enemyType.MaxCount.ToString() + ") ").PadRight(nameLength, ListPaddingCharValue) + " "
-                            + GeneratePercentageOrRarity(entity.rarity, outsideEntityRarity).PadLeft(chanceLength);
-                    }
-                }
-                return result;
+                    "\n\nDaytime Entities: (Power : Max Amount)\n" + GenerateDetailedEntityGroup(moon.level.DaytimeEnemies, "daytime") +
+                    "\n\nIndoor Entities: (Power : Max Amount)\n" + GenerateDetailedEntityGroup(moon.level.Enemies, "indoor") +
+                    "\n\nOutdoor Entities: (Power : Max Amount)\n" + GenerateDetailedEntityGroup(moon.level.OutsideEnemies, "outdoor");
             }
             public static string GenerateDetailedSafety(Moon moon)
             {
@@ -821,7 +624,7 @@ namespace lammOS.Commands
                     + GenerateDetailedSafety(moon);
             }
 
-            public override void Execute(Terminal terminal, string input, ref TerminalNode node)
+            public override void Execute(Terminal terminal, string input)
             {
                 Moon moon = null;
                 if (input == "")
@@ -851,21 +654,24 @@ namespace lammOS.Commands
 
                     if (moon == null)
                     {
-                        ErrorResponse("No moon goes by the name: '" + input + "'", node);
+                        ErrorResponse("No moon goes by the name: '" + input + "'");
                         return;
                     }
-                    if (CheckNotEnoughChars(input.Length, resultId.Length, node))
+                    if (CheckNotEnoughChars(input.Length, resultId.Length))
                     {
                         return;
                     }
                 }
 
-                node.displayText = moon.styledName + MoonsCommand.GenerateMoonIndexWeather(moon) + MoonsCommand.GenerateMoonIndexCost(moon) + "\n\n" + moon.level.LevelDescription;
+                string cost = MoonsCommand.GenerateMoonIndexCost(moon);
+                string result = moon.styledName + MoonsCommand.GenerateMoonIndexWeather(moon) + (cost == null ? "" : "$" + cost) + "\n\n" + moon.level.LevelDescription;
 
                 if (moon.level.spawnEnemiesAndScrap)
                 {
-                    node.displayText += GenerateDetailedResult(moon);
+                    result += GenerateDetailedResult(moon);
                 }
+
+                SetTerminalText(result);
             }
         }
         public class RouteCommand : ConfirmationCommand
@@ -881,17 +687,17 @@ namespace lammOS.Commands
                 args = "<Moon>";
             }
 
-            public override void Execute(Terminal terminal, string input, ref TerminalNode node)
+            public override void Execute(Terminal terminal, string input)
             {
                 if (StartOfRound.Instance.isChallengeFile)
                 {
-                    ErrorResponse("You cannot route to another moon while on a challenge moon save file.", node);
+                    ErrorResponse("You cannot route to another moon while on a challenge moon save file.");
                     return;
                 }
 
                 if (input == "")
                 {
-                    ErrorResponse("Please enter a moon to route the autopilot to.", node);
+                    ErrorResponse("Please enter a moon to route the autopilot to.");
                     return;
                 }
 
@@ -909,10 +715,10 @@ namespace lammOS.Commands
                 }
                 if (moon == null)
                 {
-                    ErrorResponse("No moon goes by the name: '" + input + "'", node);
+                    ErrorResponse("No moon goes by the name: '" + input + "'");
                     return;
                 }
-                if (CheckNotEnoughChars(input.Length, resultId.Length, node))
+                if (CheckNotEnoughChars(input.Length, resultId.Length))
                 {
                     return;
                 }
@@ -921,44 +727,44 @@ namespace lammOS.Commands
 
                 if (ShowCommandConfirmationsValue)
                 {
-                    currentCommand = this;
-                    node.displayText = "Would you like to route to " + moon.level.PlanetName + " for $" + GetMoonCost(resultId).ToString() + "?\nType CONFIRM to confirm routing.";
+                    blockingLevel = BlockingLevel.UntilSubmission;
+                    SetTerminalText("Would you like to route to " + moon.level.PlanetName + " for $" + GetMoonCost(resultId).ToString() + "?\nType CONFIRM to confirm routing.");
                     return;
                 }
 
-                Route(terminal, ref node);
+                Route(terminal);
                 this.moon = null;
             }
 
-            public void Route(Terminal terminal, ref TerminalNode node)
+            public void Route(Terminal terminal, bool confirmed = false)
             {
                 if (moon.level == StartOfRound.Instance.currentLevel)
                 {
-                    ErrorResponse("You are already at that moon.", node);
+                    ErrorResponse("You are already at that moon.");
                     return;
                 }
 
                 if (!StartOfRound.Instance.inShipPhase)
                 {
-                    ErrorResponse("You are only able to route to a moon while in orbit.", node);
+                    ErrorResponse("You are only able to route to a moon while in orbit.");
                     return;
                 }
                 if (StartOfRound.Instance.travellingToNewLevel)
                 {
-                    ErrorResponse("You are already travelling elsewhere, please wait.", node);
+                    ErrorResponse("You are already travelling elsewhere, please wait.");
                     return;
                 }
 
                 if (terminal.useCreditsCooldown)
                 {
-                    ErrorResponse("You're on a credit usage cooldown.", node);
+                    ErrorResponse("You're on a credit usage cooldown.");
                     return;
                 }
 
                 int cost = GetMoonCost(moon.id);
                 if (terminal.groupCredits < cost)
                 {
-                    ErrorResponse("You do not have enough credits to go to that moon.", node);
+                    ErrorResponse("You do not have enough credits to go to that moon.");
                     return;
                 }
 
@@ -971,19 +777,23 @@ namespace lammOS.Commands
                     terminal.groupCredits -= cost;
                     StartOfRound.Instance.ChangeLevelServerRpc(moon.node.buyRerouteToMoon, terminal.groupCredits);
                 }
-                node.displayText = "Routing autopilot to " + moon.styledName + ".";
+
+                if (confirmed)
+                {
+                    AppendTerminalText("Routing autopilot to " + moon.styledName + ".");
+                    return;
+                }
+                SetTerminalText("Routing autopilot to " + moon.styledName + ".");
             }
 
-            public override void Confirmed(Terminal terminal, ref TerminalNode node)
+            public override void Confirmed(Terminal terminal)
             {
-                node.clearPreviousText = false;
-
-                Route(terminal, ref node);
+                Route(terminal, true);
 
                 moon = null;
             }
         }
-
+        
         public class StoreCommand : Command
         {
             public StoreCommand()
@@ -994,172 +804,82 @@ namespace lammOS.Commands
                 AddShortcut("x", id);
             }
 
-            public static string GeneratePurchasableItems(Terminal terminal)
+            public static string GeneratePurchasableItems()
             {
-                string result = "Welcome to the Company store!\n" + terminal.numberOfItemsInDropship.ToString() + "/" + SyncedConfig.SyncedConfig.Instance.MaxDropshipItemsValue + " items are in the dropship.\nUse the BUY command to buy any items listed here:\n";
-                int nameLength = 0;
-                int costLength = 0;
-                int discountLength = 0;
+                List<List<string>> itemLists = new()
+                {
+                    new(),
+                    new(),
+                    new()
+                };
+
                 foreach (PurchasableItem purchasableItem in purchasableItems.Values)
                 {
-                    string name = "";
-                    if (ShowMinimumCharsValue)
-                    {
-                        name = "(" + purchasableItem.shortestChars + ") ";
-                    }
-                    name += purchasableItem.item.itemName + " ";
-
-                    if (name.Length > nameLength)
-                    {
-                        nameLength = name.Length;
-                    }
-
-                    string costString = GetItemCost(purchasableItem.item.itemName.ToLower()).ToString();
-                    if (costString.Length > costLength)
-                    {
-                        costLength = costString.Length;
-                    }
-
-                    if (purchasableItem.salePercentage != 100)
-                    {
-                        string text = "   " + (100 - purchasableItem.salePercentage).ToString() + "% OFF";
-                        if (text.Length > discountLength)
-                        {
-                            discountLength = text.Length;
-                        }
-                    }
+                    itemLists[0].Add((ShowMinimumCharsValue ? "(" + purchasableItem.shortestChars + ") " : "") + purchasableItem.item.itemName + " ");
+                    itemLists[1].Add(GetItemCost(purchasableItem.item.itemName.ToLower(), true).ToString());
+                    itemLists[2].Add(purchasableItem.salePercentage == 100 ? null : (100 - purchasableItem.salePercentage).ToString());
                 }
 
-                string finalText = "";
-                foreach (PurchasableItem purchasableItem in purchasableItems.Values)
-                {
-                    string text = "";
-                    if (ShowMinimumCharsValue)
-                    {
-                        text = "(" + purchasableItem.shortestChars + ") ";
-                    }
-
-                    text += purchasableItem.item.itemName + " ";
-                    text = text.PadRight(nameLength, ListPaddingCharValue) + " $" + GetItemCost(purchasableItem.item.itemName.ToLower(), true).ToString().PadLeft(costLength);
-
-                    if (purchasableItem.salePercentage != 100)
-                    {
-                        text += "   " + (100 - purchasableItem.salePercentage).ToString() + "% OFF";
-                    }
-                    finalText += "\n * " + text;
-                }
-                return result + "+" + new string('-', nameLength + costLength + discountLength + 4) + "+" + finalText;
+                return "Welcome to the Company store!\n" + NewTerminal.NewTerminal.Terminal.numberOfItemsInDropship.ToString() + "/" + SyncedConfig.SyncedConfig.Instance.MaxDropshipItemsValue + " items are in the dropship.\nUse the BUY command to buy any items listed here:\n" + HandleListPadding(itemLists, new List<string>() { " * {ITEM}", " ${ITEM} ", "{ITEM}% OFF " }, new List<string>() { "", "right", "right" });
             }
             public static string GenerateUpgrades()
             {
-                int nameLength = 0;
-                int costLength = 0;
                 List<PurchasableUnlockable> upgrades = new();
                 foreach (PurchasableUnlockable purchasableUnlockable in purchasableUnlockables.Values)
                 {
                     if (purchasableUnlockable.unlockable.alwaysInStock && !purchasableUnlockable.unlockable.hasBeenUnlockedByPlayer && !purchasableUnlockable.unlockable.alreadyUnlocked)
                     {
                         upgrades.Add(purchasableUnlockable);
-                        string name = "";
-                        if (ShowMinimumCharsValue)
-                        {
-                            name = "(" + purchasableUnlockable.shortestChars + ") ";
-                        }
-                        name += purchasableUnlockable.node.creatureName + " ";
-
-                        if (name.Length > nameLength)
-                        {
-                            nameLength = name.Length;
-                        }
-
-                        string costString = GetUnlockableCost(purchasableUnlockable.node.creatureName.ToLower()).ToString();
-                        if (costString.Length > costLength)
-                        {
-                            costLength = costString.Length;
-                        }
                     }
                 }
-                upgrades.Sort((x, y) => GetUnlockableCost(x.node.creatureName.ToLower()) - GetUnlockableCost(y.node.creatureName.ToLower()));
-
-                string result = "\n\nShip Upgrades:\n";
                 if (upgrades.Count == 0)
                 {
-                    return result + "+------------------------------------+\nAll ship upgrades have been purchased.";
+                    return "\n\nShip Upgrades:\n+" + new string('-', "All ship upgrades have been purchased.".Length - 2) + "+\nAll ship upgrades have been purchased.";
                 }
 
-                string finalText = "";
+                List<List<string>> itemLists = new()
+                {
+                    new(),
+                    new()
+                };
+
+                upgrades.Sort((x, y) => GetUnlockableCost(x.node.creatureName.ToLower()) - GetUnlockableCost(y.node.creatureName.ToLower()));
                 foreach (PurchasableUnlockable purchasableUnlockable in upgrades)
                 {
-                    string text = "";
-                    if (ShowMinimumCharsValue)
-                    {
-                        text = "(" + purchasableUnlockable.shortestChars + ") ";
-                    }
-                    text += purchasableUnlockable.node.creatureName + " ";
-                    finalText += "\n * " + text.PadRight(nameLength, ListPaddingCharValue) + " $" + GetUnlockableCost(purchasableUnlockable.node.creatureName.ToLower()).ToString().PadLeft(costLength);
+                    itemLists[0].Add((ShowMinimumCharsValue ? "(" + purchasableUnlockable.shortestChars + ") " : "") + purchasableUnlockable.node.creatureName + " ");
+                    itemLists[1].Add(GetUnlockableCost(purchasableUnlockable.node.creatureName.ToLower()).ToString());
                 }
-                return result + "+" + new string('-', nameLength + costLength + 4) + "+" + finalText;
+
+                return "\n\nShip Upgrades:\n" + HandleListPadding(itemLists, new List<string>() { " * {ITEM}", " ${ITEM} " }, new List<string>() { "", "right" });
             }
             public static string GenerateDecorSelection(Terminal terminal)
             {
-                string result = "\n\nShip Decor:\n";
-                int nameLength = 0;
-                int costLength = 0;
-                bool decorAvailable = false;
+                List<List<string>> itemLists = new()
+                {
+                    new(),
+                    new()
+                };
+
                 foreach (TerminalNode decorNode in terminal.ShipDecorSelection)
                 {
                     PurchasableUnlockable purchasableUnlockable = purchasableUnlockables[decorNode.creatureName.ToLower()];
                     if (purchasableUnlockable != null && !purchasableUnlockable.unlockable.hasBeenUnlockedByPlayer && !purchasableUnlockable.unlockable.alreadyUnlocked)
                     {
-                        decorAvailable = true;
-                        string name = "";
-                        if (ShowMinimumCharsValue)
-                        {
-                            name = "(" + purchasableUnlockable.shortestChars + ") ";
-                        }
-                        name += purchasableUnlockable.node.creatureName + " ";
-
-                        if (name.Length > nameLength)
-                        {
-                            nameLength = name.Length;
-                        }
-
-                        string costString = GetUnlockableCost(purchasableUnlockable.node.creatureName.ToLower()).ToString();
-                        if (costString.Length > costLength)
-                        {
-                            costLength = costString.Length;
-                        }
+                        itemLists[0].Add((ShowMinimumCharsValue ? "(" + purchasableUnlockable.shortestChars + ") " : "") + purchasableUnlockable.node.creatureName + " ");
+                        itemLists[1].Add(GetUnlockableCost(purchasableUnlockable.node.creatureName.ToLower()).ToString());
                     }
                 }
-                if (!decorAvailable)
+                if (itemLists[0].Count == 0)
                 {
-                    return result + "+-----------------------+\nNo decor items available.";
+                    return "\n\nShip Decor:\n+" + new string('-', "No decor items available.".Length - 2) + "+\nNo decor items available.";
                 }
 
-                string finalText = "";
-                foreach (TerminalNode decorNode in terminal.ShipDecorSelection)
-                {
-                    PurchasableUnlockable purchasableUnlockable = purchasableUnlockables[decorNode.creatureName.ToLower()];
-                    if (!purchasableUnlockable.unlockable.hasBeenUnlockedByPlayer && !purchasableUnlockable.unlockable.alreadyUnlocked)
-                    {
-                        string text = "";
-                        if (ShowMinimumCharsValue)
-                        {
-                            text = "(" + purchasableUnlockable.shortestChars + ") ";
-                        }
-
-                        text += purchasableUnlockable.node.creatureName + " ";
-                        finalText += "\n * " + text.PadRight(nameLength, ListPaddingCharValue) + " $" + GetUnlockableCost(purchasableUnlockable.node.creatureName.ToLower()).ToString().PadLeft(costLength);
-                    }
-                }
-                return result + "+" + new string('-', nameLength + costLength + 4) + "+" + finalText;
+                return "\n\nShip Decor:\n" + HandleListPadding(itemLists, new List<string>() { " * {ITEM}", " ${ITEM} " }, new List<string>() { "", "right" });
             }
 
-            public override void Execute(Terminal terminal, string input, ref TerminalNode node)
+            public override void Execute(Terminal terminal, string input)
             {
-                node.displayText = GeneratePurchasableItems(terminal)
-                    + GenerateUpgrades()
-                    + GenerateDecorSelection(terminal);
+                SetTerminalText(GeneratePurchasableItems() + GenerateUpgrades() + GenerateDecorSelection(terminal));
             }
         }
         public class BuyCommand : ConfirmationCommand
@@ -1197,7 +917,7 @@ namespace lammOS.Commands
                 amount = 1;
             }
 
-            public void PurchaseItem(string input, string itemInput, int amount, Terminal terminal, ref TerminalNode node)
+            public void PurchaseItem(string input, string itemInput, int amount, Terminal terminal)
             {
                 PurchasableItem purchasableItem = null;
                 foreach (PurchasableItem item in purchasableItems.Values)
@@ -1210,17 +930,17 @@ namespace lammOS.Commands
                 }
                 if (purchasableItem == null)
                 {
-                    PurchaseUnlockable(input, terminal, ref node);
+                    PurchaseUnlockable(input, terminal);
                     return;
                 }
-                if (CheckNotEnoughChars(itemInput.Length, purchasableItem.item.itemName.Length, node))
+                if (CheckNotEnoughChars(itemInput.Length, purchasableItem.item.itemName.Length))
                 {
                     return;
                 }
 
                 if (amount < 1)
                 {
-                    ErrorResponse("You must buy at least 1 item when purchasing items.", node);
+                    ErrorResponse("You must buy at least 1 item when purchasing items.");
                     return;
                 }
 
@@ -1229,16 +949,16 @@ namespace lammOS.Commands
 
                 if (ShowCommandConfirmationsValue)
                 {
-                    currentCommand = this;
-                    node.displayText = "Would you like to purchase " + purchasableItem.item.itemName + " x" + amount.ToString() + " for $" + (GetItemCost(purchasableItem.item.itemName.ToLower(), true) * amount).ToString() + "?\nType CONFIRM to confirm your purchase.";
+                    blockingLevel = BlockingLevel.UntilSubmission;
+                    SetTerminalText("Would you like to purchase " + purchasableItem.item.itemName + " x" + amount.ToString() + " for $" + (GetItemCost(purchasableItem.item.itemName.ToLower(), true) * amount).ToString() + "?\nType CONFIRM to confirm your purchase.");
                     return;
                 }
 
-                TryPurchaseItem(terminal, ref node);
+                TryPurchaseItem(terminal);
                 purchasableItem = null;
                 amount = 0;
             }
-            public void PurchaseUnlockable(string input, Terminal terminal, ref TerminalNode node)
+            public void PurchaseUnlockable(string input, Terminal terminal)
             {
                 PurchasableUnlockable purchasableUnlockable = null;
                 foreach (PurchasableUnlockable unlockable in purchasableUnlockables.Values)
@@ -1251,10 +971,10 @@ namespace lammOS.Commands
                 }
                 if (purchasableUnlockable == null)
                 {
-                    ErrorResponse("No purchasable item or unlockable goes by the name: '" + input + "'", node);
+                    ErrorResponse("No purchasable item or unlockable goes by the name: '" + input + "'");
                     return;
                 }
-                if (CheckNotEnoughChars(input.Length, purchasableUnlockable.node.creatureName.Length, node))
+                if (CheckNotEnoughChars(input.Length, purchasableUnlockable.node.creatureName.Length))
                 {
                     return;
                 }
@@ -1263,45 +983,45 @@ namespace lammOS.Commands
 
                 if (ShowCommandConfirmationsValue)
                 {
-                    currentCommand = this;
-                    node.displayText = "Would you like to purchase a " + purchasableUnlockable.node.creatureName + " for $" + GetUnlockableCost(purchasableUnlockable.node.creatureName.ToLower()).ToString() + "?\nType CONFIRM to confirm your purchase.";
+                    blockingLevel = BlockingLevel.UntilSubmission;
+                    SetTerminalText("Would you like to purchase a " + purchasableUnlockable.node.creatureName + " for $" + GetUnlockableCost(purchasableUnlockable.node.creatureName.ToLower()).ToString() + "?\nType CONFIRM to confirm your purchase.");
                     return;
                 }
 
-                TryPurchaseUnlockable(terminal, ref node);
+                TryPurchaseUnlockable(terminal);
                 purchasableUnlockable = null;
             }
 
-            public override void Execute(Terminal terminal, string input, ref TerminalNode node)
+            public override void Execute(Terminal terminal, string input)
             {
                 if (input == "")
                 {
-                    ErrorResponse("Please enter an item to purchase.", node);
+                    ErrorResponse("Please enter an item to purchase.");
                     return;
                 }
                 if (terminal.useCreditsCooldown)
                 {
-                    ErrorResponse("You're on a credit usage cooldown.", node);
+                    ErrorResponse("You're on a credit usage cooldown.");
                     return;
                 }
 
                 input = input.ToLower();
                 ParseInput(input, out string itemInput, out int amount);
 
-                PurchaseItem(input, itemInput, amount, terminal, ref node);
+                PurchaseItem(input, itemInput, amount, terminal);
             }
 
-            public void TryPurchaseItem(Terminal terminal, ref TerminalNode node)
+            public void TryPurchaseItem(Terminal terminal, bool confirmed = false)
             {
                 int cost = GetItemCost(purchasableItem.item.itemName.ToLower(), true);
                 if (terminal.groupCredits < cost * amount)
                 {
-                    ErrorResponse("You do not have enough credits to purchase that item.", node);
+                    ErrorResponse("You do not have enough credits to purchase that item.");
                     return;
                 }
                 if (amount + terminal.numberOfItemsInDropship > SyncedConfig.SyncedConfig.Instance.MaxDropshipItemsValue)
                 {
-                    ErrorResponse("There is not enough space on the dropship for these items, there are currently " + terminal.numberOfItemsInDropship.ToString() + "/" + SyncedConfig.SyncedConfig.Instance.MaxDropshipItemsValue.ToString() + " items en route.", node);
+                    ErrorResponse("There is not enough space on the dropship for these items, there are currently " + terminal.numberOfItemsInDropship.ToString() + "/" + SyncedConfig.SyncedConfig.Instance.MaxDropshipItemsValue.ToString() + " items en route.");
                     return;
                 }
 
@@ -1318,51 +1038,56 @@ namespace lammOS.Commands
                     }
                 }
 
-                if (terminal.IsServer)
+                if (terminal.IsHost)
                 {
                     terminal.SyncGroupCreditsClientRpc(terminal.groupCredits, terminal.numberOfItemsInDropship);
                 }
                 else
                 {
-                    if (terminal.orderedItemsFromTerminal.Count > 1)
+                    if (terminal.orderedItemsFromTerminal.Count != 0)
                     {
                         terminal.BuyItemsServerRpc(terminal.orderedItemsFromTerminal.ToArray(), terminal.groupCredits, terminal.numberOfItemsInDropship);
                         terminal.orderedItemsFromTerminal.Clear();
                     }
                 }
 
-                node.displayText = "Purchased " + purchasableItem.item.itemName + " x" + amount.ToString() + " for $" + (cost * amount).ToString() + ".";
-                node.playSyncedClip = terminalSyncedSounds["buy"];
+                PlaySyncedClip(terminalSyncedSounds["buy"]);
+                if (confirmed)
+                {
+                    AppendTerminalText("Purchased " + purchasableItem.item.itemName + " x" + amount.ToString() + " for $" + (cost * amount).ToString() + ".");
+                    return;
+                }
+                SetTerminalText("Purchased " + purchasableItem.item.itemName + " x" + amount.ToString() + " for $" + (cost * amount).ToString() + ".");
             }
-            public void TryPurchaseUnlockable(Terminal terminal, ref TerminalNode node)
+            public void TryPurchaseUnlockable(Terminal terminal, bool confirmed = false)
             {
                 if (!purchasableUnlockable.unlockable.alwaysInStock && !terminal.ShipDecorSelection.Contains(purchasableUnlockable.unlockable.shopSelectionNode))
                 {
-                    ErrorResponse("This unlockable is not for sale.", node);
+                    ErrorResponse("This unlockable is not for sale.");
                     return;
                 }
                 if (purchasableUnlockable.unlockable.hasBeenUnlockedByPlayer || purchasableUnlockable.unlockable.alreadyUnlocked)
                 {
-                    ErrorResponse("You already have this unlockable.", node);
+                    ErrorResponse("You already have this unlockable.");
                     return;
                 }
 
                 int cost = GetUnlockableCost(purchasableUnlockable.node.creatureName.ToLower());
                 if (terminal.groupCredits < cost)
                 {
-                    ErrorResponse("You do not have enough credits to purchase that unlockable.", node);
+                    ErrorResponse("You do not have enough credits to purchase that unlockable.");
                     return;
                 }
                 if ((!StartOfRound.Instance.inShipPhase && !StartOfRound.Instance.shipHasLanded) || StartOfRound.Instance.shipAnimator.GetCurrentAnimatorStateInfo(0).tagHash != Animator.StringToHash("ShipIdle"))
                 {
-                    ErrorResponse("You cannot purchase that unlockable currently.", node);
+                    ErrorResponse("You cannot purchase that unlockable currently.");
                     return;
                 }
 
                 HUDManager.Instance.DisplayTip("Tip", "Press B to move and place objects in the ship, E to cancel.", false, true, "LC_MoveObjectsTip");
                 if (terminal.IsHost)
                 {
-                    StartOfRound.Instance.BuyShipUnlockableServerRpc(purchasableUnlockable.node.shipUnlockableID, terminal.groupCredits - cost);
+                    StartOfRound.Instance.BuyShipUnlockableServerRpc(purchasableUnlockable.node.shipUnlockableID, Mathf.Clamp(terminal.groupCredits - cost, 0, 10000000));
                 }
                 else
                 {
@@ -1370,22 +1095,28 @@ namespace lammOS.Commands
                     StartOfRound.Instance.BuyShipUnlockableServerRpc(purchasableUnlockable.node.shipUnlockableID, terminal.groupCredits);
                 }
 
-                node.displayText = "Purchased " + purchasableUnlockable.node.creatureName + " for $" + cost.ToString() + ".";
-                node.playSyncedClip = terminalSyncedSounds["buy"];
+                PlaySyncedClip(terminalSyncedSounds["buy"]);
+                if (confirmed)
+                {
+                    AppendTerminalText("Purchased " + purchasableUnlockable.node.creatureName + " for $" + cost.ToString() + ".");
+                    return;
+                }
+                SetTerminalText("Purchased " + purchasableUnlockable.node.creatureName + " for $" + cost.ToString() + ".");
             }
 
-            public override void Confirmed(Terminal terminal, ref TerminalNode node)
+            public override void Confirmed(Terminal terminal)
             {
-                node.clearPreviousText = false;
                 if (purchasableItem != null)
                 {
-                    TryPurchaseItem(terminal, ref node);
+                    TryPurchaseItem(terminal, true);
+
                     purchasableItem = null;
                     amount = 0;
                 }
                 else if (purchasableUnlockable != null)
                 {
-                    TryPurchaseUnlockable(terminal, ref node);
+                    TryPurchaseUnlockable(terminal, true);
+
                     purchasableUnlockable = null;
                 }
             }
@@ -1400,38 +1131,23 @@ namespace lammOS.Commands
                 AddShortcut("st", id);
             }
 
-            public override void Execute(Terminal terminal, string input, ref TerminalNode node)
+            public override void Execute(Terminal terminal, string input)
             {
-                node.displayText = "Use the RETRIEVE command to take unlockables out of storage. Stored Unlockables:\n";
-                int length = 0;
-                string finalText = "";
-                bool hasStored = false;
+                List<string> unlockables = new();
                 foreach (PurchasableUnlockable unlockable in purchasableUnlockables.Values)
                 {
                     if (unlockable.unlockable.inStorage)
                     {
-                        hasStored = true;
-
-                        string text = "";
-                        if (ShowMinimumCharsValue)
-                        {
-                            text = "(" + unlockable.shortestChars + ") ";
-                        }
-                        text += unlockable.node.creatureName;
-
-                        if (text.Length > length)
-                        {
-                            length = text.Length;
-                        }
-                        finalText += "\n * " + text;
+                        unlockables.Add((ShowMinimumCharsValue ? "(" + unlockable.shortestChars + ") " : "") + unlockable.node.creatureName);
                     }
                 }
-                if (!hasStored)
+
+                if (unlockables.Count == 0)
                 {
-                    node.displayText += "+----------------------------------+\nThere are no unlockables in storage.";
+                    SetTerminalText("Use the RETRIEVE command to take unlockables out of storage. Stored Unlockables:\n+" + new string('-', "There are no unlockables in storage.".Length - 2) + "+\nThere are no unlockables in storage.");
                     return;
                 }
-                node.displayText += "+" + new string('-', length + 2) + "+" + finalText;
+                SetTerminalText("Use the RETRIEVE command to take unlockables out of storage. Stored Unlockables:\n" + HandleListPadding(new() { unlockables }, new List<string>() { " * {ITEM} " }, new List<string>() { "" }));
             }
         }
         public class RetrieveCommand : Command
@@ -1445,11 +1161,11 @@ namespace lammOS.Commands
                 args = "<Item>";
             }
 
-            public override void Execute(Terminal terminal, string input, ref TerminalNode node)
+            public override void Execute(Terminal terminal, string input)
             {
                 if (input == "")
                 {
-                    ErrorResponse("Please enter an unlockable to take out of storage.", node);
+                    ErrorResponse("Please enter an unlockable to take out of storage.");
                     return;
                 }
 
@@ -1465,30 +1181,30 @@ namespace lammOS.Commands
                 }
                 if (purchasableUnlockable == null)
                 {
-                    ErrorResponse("No unlockable goes by the name: '" + input + "'", node);
+                    ErrorResponse("No unlockable goes by the name: '" + input + "'");
                     return;
                 }
-                if (CheckNotEnoughChars(input.Length, purchasableUnlockable.node.creatureName.Length, node))
+                if (CheckNotEnoughChars(input.Length, purchasableUnlockable.node.creatureName.Length))
                 {
                     return;
                 }
 
                 if (!purchasableUnlockable.unlockable.inStorage)
                 {
-                    ErrorResponse("That unlockable is not in storage.", node);
+                    ErrorResponse("That unlockable is not in storage.");
                     return;
                 }
                 if (!purchasableUnlockable.unlockable.hasBeenUnlockedByPlayer && !purchasableUnlockable.unlockable.alreadyUnlocked)
                 {
-                    ErrorResponse("You do not own that unlockable.", node);
+                    ErrorResponse("You do not own that unlockable.");
                     return;
                 }
 
                 StartOfRound.Instance.ReturnUnlockableFromStorageServerRpc(purchasableUnlockable.node.shipUnlockableID);
-                node.displayText = "Returned unlockable from storage.";
+                SetTerminalText("Returned unlockable from storage.");
             }
         }
-
+        
         public class BestiaryCommand : Command
         {
             public BestiaryCommand()
@@ -1502,38 +1218,25 @@ namespace lammOS.Commands
 
             public string GenerateBestiaryPage(Terminal terminal)
             {
-                string result = "Welcome to the Bestiary, use the BESTIARY command followed by one of the following names to view information about that entity.\n";
-                if (terminal.scannedEnemyIDs == null || terminal.scannedEnemyIDs.Count <= 0)
+                if (terminal.scannedEnemyIDs == null || terminal.scannedEnemyIDs.Count == 0)
                 {
-                    return result + "+----------------------------+\nNo data collected on wildlife.";
+                    return "Welcome to the Bestiary, use the BESTIARY command followed by one of the following names to view information about that entity.\n+" + new string('-', "No data collected on wildlife.".Length - 2) + "+\nNo data collected on wildlife.";
                 }
-                int length = 0;
-                string finalText = "";
+
+                List<string> entitiesList = new();
                 foreach (Entity entity in entities.Values)
                 {
-                    TerminalNode entityNode = entity.entry;
-                    if (entityNode == null || !terminal.scannedEnemyIDs.Contains(entityNode.creatureFileID))
+                    if (entity.entry != null && terminal.scannedEnemyIDs.Contains(entity.entry.creatureFileID))
                     {
-                        continue;
+                        entitiesList.Add((terminal.newlyScannedEnemyIDs.Contains(entity.entry.creatureFileID) ? "(!) " : "") + (ShowMinimumCharsValue ? "(" + entity.shortestChars + ") " : "") + entity.name);
                     }
-
-                    string text = "";
-                    if (terminal.newlyScannedEnemyIDs.Contains(entityNode.creatureFileID))
-                    {
-                        text  = "(!) ";
-                    }
-                    if (ShowMinimumCharsValue)
-                    {
-                        text += "(" + entity.shortestChars + ") ";
-                    }
-                    text += entity.name;
-                    if (text.Length > length)
-                    {
-                        length = text.Length;
-                    }
-                    finalText += "\n * " + text;
                 }
-                return result + "+" + new string('-', length + 2) + "+" + finalText;
+
+                if (entitiesList.Count == 0)
+                {
+                    return "Welcome to the Bestiary, use the BESTIARY command followed by one of the following names to view information about that entity.\n+" + new string('-', "No data collected on wildlife.".Length - 2) + "+\nNo data collected on wildlife.";
+                }
+                return "Welcome to the Bestiary, use the BESTIARY command followed by one of the following names to view information about that entity.\n" + HandleListPadding(new() { entitiesList }, new List<string>() { " * {ITEM} " }, new List<string>() { "" });
             }
             public string GenerateEntryPage(EnemyType entityType)
             {
@@ -1554,41 +1257,37 @@ namespace lammOS.Commands
                 return result;
             }
 
-            public override void Execute(Terminal terminal, string input, ref TerminalNode node)
+            public override void Execute(Terminal terminal, string input)
             {
                 if (input == "")
                 {
-                    node.displayText = GenerateBestiaryPage(terminal);
+                    SetTerminalText(GenerateBestiaryPage(terminal));
                     return;
                 }
 
                 input = input.ToLower();
-                EnemyType entityType = null;
-                TerminalNode entityNode = null;
-                string resultName = null;
-                foreach (Entity entity in entities.Values)
+                Entity entity = null;
+                foreach (Entity e in entities.Values)
                 {
-                    if (entity.entry != null && entity.name.ToLower().StartsWith(input) && terminal.scannedEnemyIDs.Contains(entity.entry.creatureFileID))
+                    if (e.entry != null && e.name.ToLower().StartsWith(input) && terminal.scannedEnemyIDs.Contains(e.entry.creatureFileID))
                     {
-                        entityType = entity.type;
-                        entityNode = entity.entry;
-                        resultName = entity.name;
+                        entity = e;
                         break;
                     }
                 }
-                if (entityType == null)
+                if (entity == null)
                 {
-                    ErrorResponse("No entity exists with the name: '" + input + "'", node);
+                    ErrorResponse("No entity exists with the name: '" + input + "'");
                     return;
                 }
-                if (CheckNotEnoughChars(input.Length, resultName.Length, node))
+                if (CheckNotEnoughChars(input.Length, entity.name.Length))
                 {
                     return;
                 }
 
-                terminal.newlyScannedEnemyIDs.Remove(entityNode.creatureFileID);
-                node = entityNode;
-                node.displayText = node.displayText.TrimEnd('\n') + GenerateEntryPage(entityType);
+                terminal.newlyScannedEnemyIDs.Remove(entity.entry.creatureFileID);
+                terminal.LoadTerminalImage(entity.entry);
+                SetTerminalText(entity.entry.displayText.TrimEnd('\n') + (entity.type == null ? "" : GenerateEntryPage(entity.type)));
             }
         }
         public class SigurdCommand : Command
@@ -1610,39 +1309,22 @@ namespace lammOS.Commands
                     return "ERROR, DATA HAS BEEN CORRUPTED OR OVERWRITTEN.";
                 }
 
-                int length = 0;
-                string finalText = "";
+                List<string> logsList = new();
                 foreach (Log log in logs.Values)
                 {
-                    if (!terminal.unlockedStoryLogs.Contains(log.log.storyLogFileID))
+                    if (terminal.unlockedStoryLogs.Contains(log.log.storyLogFileID))
                     {
-                        continue;
+                        logsList.Add((terminal.newlyUnlockedStoryLogs.Contains(log.log.storyLogFileID) ? "(!) " : "") + (ShowMinimumCharsValue ? "(" + log.shortestChars + ") " : "") + log.log.creatureName);
                     }
-                    string text = "";
-                    if (terminal.newlyUnlockedStoryLogs.Contains(log.log.storyLogFileID))
-                    {
-                        text = "(!) ";
-                    }
-                    if (ShowMinimumCharsValue)
-                    {
-                        text += "(" + log.shortestChars + ") ";
-                    }
-                    text += log.log.creatureName;
-
-                    if (text.Length > length)
-                    {
-                        length = text.Length;
-                    }
-                    finalText += "\n * " + text;
                 }
-                return "Sigurd's Log Entries.\nRead an entry by entering SIGURD followed by the name of the entry you wish to read.\n+" + new string('-', length + 2) + "+" + finalText;
+                return "Sigurd's Log Entries.\nRead an entry by entering SIGURD followed by the name of the entry you wish to read.\n" + HandleListPadding(new() { logsList }, new List<string>() { " * {ITEM} " }, new List<string>() { "" });
             }
 
-            public override void Execute(Terminal terminal, string input, ref TerminalNode node)
+            public override void Execute(Terminal terminal, string input)
             {
                 if (input == "")
                 {
-                    node.displayText = GenerateSigurdPage(terminal);
+                    SetTerminalText(GenerateSigurdPage(terminal));
                     return;
                 }
 
@@ -1658,19 +1340,71 @@ namespace lammOS.Commands
                 }
                 if (log == null)
                 {
-                    ErrorResponse("No log exists with the name: '" + input + "'", node);
+                    ErrorResponse("No log exists with the name: '" + input + "'");
                     return;
                 }
-                if (CheckNotEnoughChars(input.Length, log.log.creatureName.Length, node))
+                if (CheckNotEnoughChars(input.Length, log.log.creatureName.Length))
                 {
                     return;
                 }
 
                 terminal.newlyUnlockedStoryLogs.Remove(log.log.storyLogFileID);
-                node = log.log;
+                SetTerminalText(log.log.displayText);
             }
         }
+        
+        public class CodesCommand : Command
+        {
+            public CodesCommand()
+            {
+                category = "Radar";
+                id = "codes";
+                description = "View all of the alphanumeric codes and what objects they correspond to within the building.";
+                AddShortcut("co", id);
+            }
 
+            public override void Execute(Terminal terminal, string input)
+            {
+                List<List<string>> itemLists = new()
+                {
+                    new(),
+                    new(),
+                    new()
+                };
+                foreach (TerminalAccessibleObject tao in UnityEngine.Object.FindObjectsByType<TerminalAccessibleObject>(FindObjectsSortMode.None))
+                {
+                    itemLists[0].Add(tao.objectCode);
+
+                    if (tao.isBigDoor)
+                    {
+                        itemLists[1].Add("Door");
+                        itemLists[2].Add(tao.isDoorOpen ? "(Open)" : "(Closed)");
+                        continue;
+                    }
+                    if (tao.name == "Landmine")
+                    {
+                        itemLists[1].Add("Landmine");
+                    }
+                    else if (tao.name == "TurretScript")
+                    {
+                        itemLists[1].Add("Turret");
+                    }
+                    else
+                    {
+                        itemLists[1].Add(tao.name);
+                    }
+
+                    itemLists[2].Add(tao.inCooldown ? "(Deactivated)" : "(Active)");
+                }
+
+                if (itemLists[0].Count == 0)
+                {
+                    SetTerminalText("This is the full list of alphanumeric codes on the current moon and what objects they're bound to.\nYou can enter one of the following alphanumeric codes to interact with the object they're bound to, or enter HELP B3 to see some other options.\n+" + new string('-', "There are no alphanumeric codes.".Length - 2) + "+\nThere are no alphanumeric codes.");
+                    return;
+                }
+                SetTerminalText("This is the full list of alphanumeric codes on the current moon and what objects they're bound to.\nYou can enter one of the following alphanumeric codes to interact with the object they're bound to, or enter HELP B3 to see some other options.\n" + HandleListPadding(itemLists, new List<string>() { " * {ITEM} : ", " {ITEM} ", " {ITEM} " }, new List<string>() { "", "", "" }));
+            }
+        }
         public class MonitorCommand : Command
         {
             public MonitorCommand()
@@ -1681,10 +1415,21 @@ namespace lammOS.Commands
                 AddShortcut("v", id);
             }
 
-            public override void Execute(Terminal terminal, string input, ref TerminalNode node)
+            public override void Execute(Terminal terminal, string input)
             {
-                node.displayTexture = StartOfRound.Instance.mapScreen.cam.targetTexture;
-                node.persistentImage = true;
+                SetTerminalText("");
+                if (StartOfRound.Instance.inShipPhase || terminal.displayingPersistentImage == StartOfRound.Instance.mapScreen.cam.targetTexture)
+                {
+                    terminal.terminalImage.enabled = false;
+                    terminal.terminalImage.texture = null;
+                    terminal.displayingPersistentImage = null;
+                    SetBodyHelmetCameraVisibility();
+                    return;
+                }
+                terminal.terminalImage.enabled = true;
+                terminal.terminalImage.texture = StartOfRound.Instance.mapScreen.cam.targetTexture;
+                terminal.displayingPersistentImage = StartOfRound.Instance.mapScreen.cam.targetTexture;
+                SetBodyHelmetCameraVisibility();
             }
         }
         public class TargetsCommand : Command
@@ -1697,30 +1442,26 @@ namespace lammOS.Commands
                 AddShortcut("rt", id);
             }
 
-            public override void Execute(Terminal terminal, string input, ref TerminalNode node)
+            public override void Execute(Terminal terminal, string input)
             {
-                node.displayText = "These are radar targets you can switch to using the SWITCH command, or by using the left and right arrow keys with the monitor on screen after using the MONITOR command. Radar boosters can be flashed and pinged by using the FLASH and PING commands.\n";
-                int length = 0;
-                string finalText = "";
+                List<List<string>> itemLists = new()
+                {
+                    new(),
+                    new()
+                };
                 foreach (TransformAndName target in StartOfRound.Instance.mapScreen.radarTargets)
                 {
-                    string text = "";
                     PlayerControllerB component = target.transform.gameObject.GetComponent<PlayerControllerB>();
                     if (component != null && !component.isPlayerControlled && !component.isPlayerDead && component.redirectToEnemy == null)
                     {
                         continue;
                     }
-                    text = target.name;
 
-                    if (text.Length > length)
-                    {
-                        length = text.Length;
-                    }
-
-                    finalText += "\n * " + text;
+                    itemLists[0].Add(target.name);
+                    itemLists[1].Add(target.isNonPlayer ? "(Radar Booster)" : null);
                 }
 
-                node.displayText += "+" + new string('-', length + 2) + "+" + finalText;
+                SetTerminalText("These are radar targets you can switch to using the SWITCH command, or by using the left and right arrow keys with the monitor on screen after using the MONITOR command. Radar boosters can be flashed and pinged by using the FLASH and PING commands.\n" + HandleListPadding(itemLists, new List<string>() { " * {ITEM} ", " {ITEM} " }, new List<string>() { "", "" }));
             }
         }
         public class SwitchCommand : Command
@@ -1734,11 +1475,12 @@ namespace lammOS.Commands
                 args = "[Radar target]";
             }
 
-            public override void Execute(Terminal terminal, string input, ref TerminalNode node)
+            public override void Execute(Terminal terminal, string input)
             {
                 if (input == "")
                 {
                     StartOfRound.Instance.mapScreen.SwitchRadarTargetAndSync((StartOfRound.Instance.mapScreen.targetTransformIndex + 1) % StartOfRound.Instance.mapScreen.radarTargets.Count);
+                    SetTerminalText("");
                     return;
                 }
                 input = input.ToLower();
@@ -1753,15 +1495,16 @@ namespace lammOS.Commands
                 }
                 if (target == -1)
                 {
-                    ErrorResponse("No radar target goes by the name: '" + input + "'", node);
+                    ErrorResponse("No radar target goes by the name: '" + input + "'");
                     return;
                 }
-                if (CheckNotEnoughChars(input.Length, StartOfRound.Instance.mapScreen.radarTargets[target].name.Length, node))
+                if (CheckNotEnoughChars(input.Length, StartOfRound.Instance.mapScreen.radarTargets[target].name.Length))
                 {
                     return;
                 }
 
                 StartOfRound.Instance.mapScreen.SwitchRadarTargetAndSync(target);
+                SetTerminalText("");
             }
         }
         public class PingCommand : Command
@@ -1775,16 +1518,17 @@ namespace lammOS.Commands
                 args = "[Radar booster]";
             }
 
-            public override void Execute(Terminal terminal, string input, ref TerminalNode node)
+            public override void Execute(Terminal terminal, string input)
             {
                 if (input == "")
                 {
                     if (!StartOfRound.Instance.mapScreen.radarTargets[StartOfRound.Instance.mapScreen.targetTransformIndex].isNonPlayer)
                     {
-                        ErrorResponse("You can only ping radar boosters.", node);
+                        ErrorResponse("You can only ping radar boosters.");
                         return;
                     }
                     StartOfRound.Instance.mapScreen.PingRadarBooster(StartOfRound.Instance.mapScreen.targetTransformIndex);
+                    SetTerminalText("");
                     return;
                 }
 
@@ -1800,20 +1544,21 @@ namespace lammOS.Commands
                 }
                 if (target == -1)
                 {
-                    ErrorResponse("No radar booster goes by the name: '" + input + "'", node);
+                    ErrorResponse("No radar booster goes by the name: '" + input + "'");
                     return;
                 }
-                if (CheckNotEnoughChars(input.Length, StartOfRound.Instance.mapScreen.radarTargets[target].name.Length, node))
+                if (CheckNotEnoughChars(input.Length, StartOfRound.Instance.mapScreen.radarTargets[target].name.Length))
                 {
                     return;
                 }
 
                 if (!StartOfRound.Instance.mapScreen.radarTargets[target].isNonPlayer)
                 {
-                    ErrorResponse("You can only ping radar boosters.", node);
+                    ErrorResponse("You can only ping radar boosters.");
                     return;
                 }
                 StartOfRound.Instance.mapScreen.PingRadarBooster(target);
+                SetTerminalText("");
             }
         }
         public class FlashCommand : Command
@@ -1827,16 +1572,17 @@ namespace lammOS.Commands
                 args = "[Radar booster]";
             }
 
-            public override void Execute(Terminal terminal, string input, ref TerminalNode node)
+            public override void Execute(Terminal terminal, string input)
             {
                 if (input == "")
                 {
                     if (!StartOfRound.Instance.mapScreen.radarTargets[StartOfRound.Instance.mapScreen.targetTransformIndex].isNonPlayer)
                     {
-                        ErrorResponse("You can only flash radar boosters.", node);
+                        ErrorResponse("You can only flash radar boosters.");
                         return;
                     }
                     StartOfRound.Instance.mapScreen.FlashRadarBooster(StartOfRound.Instance.mapScreen.targetTransformIndex);
+                    SetTerminalText("");
                     return;
                 }
 
@@ -1852,75 +1598,24 @@ namespace lammOS.Commands
                 }
                 if (target == -1)
                 {
-                    ErrorResponse("No radar booster goes by the name: '" + input + "'", node);
+                    ErrorResponse("No radar booster goes by the name: '" + input + "'");
                     return;
                 }
-                if (CheckNotEnoughChars(input.Length, StartOfRound.Instance.mapScreen.radarTargets[target].name.Length, node))
+                if (CheckNotEnoughChars(input.Length, StartOfRound.Instance.mapScreen.radarTargets[target].name.Length))
                 {
                     return;
                 }
 
                 if (!StartOfRound.Instance.mapScreen.radarTargets[target].isNonPlayer)
                 {
-                    ErrorResponse("You can only flash radar boosters.", node);
+                    ErrorResponse("You can only flash radar boosters.");
                     return;
                 }
                 StartOfRound.Instance.mapScreen.FlashRadarBooster(target);
+                SetTerminalText("");
             }
         }
-
-        public class CodesCommand : Command
-        {
-            public CodesCommand()
-            {
-                category = "Alphanumeric Codes";
-                id = "codes";
-                description = "View all of the alphanumeric codes and what objects they correspond to within the building.";
-                AddShortcut("co", id);
-            }
-
-            public override void Execute(Terminal terminal, string input, ref TerminalNode node)
-            {
-                node.displayText = "This is the full list of alphanumeric codes on the current moon and what objects they're bound to.\nYou can enter one of the following alphanumeric codes to interact with the object they're bound to:\n";
-                int length = 0;
-                string result = "";
-                foreach (TerminalAccessibleObject tao in UnityEngine.Object.FindObjectsByType<TerminalAccessibleObject>(FindObjectsSortMode.None))
-                {
-                    result += "\n * " + tao.objectCode + ": ";
-                    if (tao.isBigDoor)
-                    {
-                        result += "Door";
-                        if (4 > length)
-                        {
-                            length = 4;
-                        }
-                        continue;
-                    }
-                    if (tao.codeAccessCooldownTimer == 3.2f)
-                    {
-                        result += "Landmine";
-                        if (8 > length)
-                        {
-                            length = 8;
-                        }
-                        continue;
-                    }
-                    result += "Turret";
-                    if (6 > length)
-                    {
-                        length = 6;
-                    }
-                }
-
-                if (result == "")
-                {
-                    node.displayText += "+------------------------------+\nThere are no alphanumeric codes.";
-                    return;
-                }
-                node.displayText += "+" + new string('-', length + 6) + "+" + result;
-            }
-        }
-
+        
         public class LandCommand : ConfirmationCommand
         {
             public LandCommand()
@@ -1930,58 +1625,61 @@ namespace lammOS.Commands
                 description = "Lands the ship on the moon you are currently orbiting.";
             }
 
-            public override void Execute(Terminal terminal, string input, ref TerminalNode node)
+            public override void Execute(Terminal terminal, string input)
             {
                 if (ShowCommandConfirmationsValue)
                 {
-                    currentCommand = this;
-                    node.displayText = "Would you like to pull the lever to land on " + StartOfRound.Instance.currentLevel.PlanetName + "?\nType CONFIRM to confirm landing.";
+                    blockingLevel = BlockingLevel.UntilSubmission;
+                    SetTerminalText("Would you like to pull the lever to land on " + StartOfRound.Instance.currentLevel.PlanetName + "?\nType CONFIRM to confirm landing.");
                     return;
                 }
 
-                Land(terminal, ref node);
+                Land(terminal);
             }
 
-            public void Land(Terminal terminal, ref TerminalNode node)
+            public void Land(Terminal terminal, bool confirmed = false)
             {
                 if (StartOfRound.Instance.travellingToNewLevel)
                 {
-                    ErrorResponse("The ship is currently routing to another moon.", node);
+                    ErrorResponse("The ship is currently routing to another moon.");
                     return;
                 }
                 if (StartOfRound.Instance.shipHasLanded)
                 {
-                    ErrorResponse("The ship is already on the moon.", node);
+                    ErrorResponse("The ship is already on the moon.");
                     return;
                 }
                 if (!GameNetworkManager.Instance.gameHasStarted && !GameNetworkManager.Instance.isHostingGame)
                 {
-                    ErrorResponse("The host must be the one to land the ship at the start of the game.", node);
+                    ErrorResponse("The host must be the one to land the ship at the start of the game.");
                     return;
                 }
 
                 StartMatchLever lever = UnityEngine.Object.FindAnyObjectByType<StartMatchLever>();
                 if (lever.leverHasBeenPulled)
                 {
-                    ErrorResponse("The lever has already been pulled.", node);
+                    ErrorResponse("The lever has already been pulled.");
                     return;
                 }
                 if (!lever.triggerScript.interactable)
                 {
-                    ErrorResponse("The lever cannot currently be pulled.", node);
+                    ErrorResponse("The lever cannot currently be pulled.");
                     return;
                 }
 
                 lever.LeverAnimation();
                 lever.PullLever();
-                node.displayText = "Pulling the lever to land on " + StartOfRound.Instance.currentLevel.PlanetName + "...";
+                if (confirmed)
+                {
+                    AppendTerminalText("Pulling the lever to land on " + StartOfRound.Instance.currentLevel.PlanetName + "...");
+                    return;
+                }
+                SetTerminalText("Pulling the lever to land on " + StartOfRound.Instance.currentLevel.PlanetName + "...");
             }
 
-            public override void Confirmed(Terminal terminal, ref TerminalNode node)
+            public override void Confirmed(Terminal terminal)
             {
-                node.clearPreviousText = false;
-
-                Land(terminal, ref node);
+                Land(terminal, true);
             }
         }
         public class LaunchCommand : ConfirmationCommand
@@ -1993,58 +1691,61 @@ namespace lammOS.Commands
                 description = "Launches the ship into orbit around the moon it is currently on.";
             }
 
-            public override void Execute(Terminal terminal, string input, ref TerminalNode node)
+            public override void Execute(Terminal terminal, string input)
             {
                 if (ShowCommandConfirmationsValue)
                 {
-                    currentCommand = this;
-                    node.displayText = "Would you like to pull the lever to launch into orbit?\nType CONFIRM to confirm landing.";
+                    blockingLevel = BlockingLevel.UntilSubmission;
+                    SetTerminalText("Would you like to pull the lever to launch into orbit?\nType CONFIRM to confirm landing.");
                     return;
                 }
 
-                Launch(terminal, ref node);
+                Launch(terminal);
             }
 
-            public void Launch(Terminal terminal, ref TerminalNode node)
+            public void Launch(Terminal terminal, bool confirmed = false)
             {
                 if (StartOfRound.Instance.travellingToNewLevel)
                 {
-                    ErrorResponse("The ship is currently routing to another moon.", node);
+                    ErrorResponse("The ship is currently routing to another moon.");
                     return;
                 }
                 if (!StartOfRound.Instance.shipHasLanded)
                 {
-                    ErrorResponse("The ship is either still landing, already in orbit, or currently leaving the moon.", node);
+                    ErrorResponse("The ship is either still landing, already in orbit, or currently leaving the moon.");
                     return;
                 }
                 if (!GameNetworkManager.Instance.gameHasStarted && !GameNetworkManager.Instance.isHostingGame)
                 {
-                    ErrorResponse("The host must be the one to land the ship at the start of the game.", node);
+                    ErrorResponse("The host must be the one to land the ship at the start of the game.");
                     return;
                 }
 
                 StartMatchLever lever = UnityEngine.Object.FindAnyObjectByType<StartMatchLever>();
                 if (!lever.leverHasBeenPulled)
                 {
-                    ErrorResponse("The lever has already been pulled.", node);
+                    ErrorResponse("The lever has already been pulled.");
                     return;
                 }
                 if (!lever.triggerScript.interactable)
                 {
-                    ErrorResponse("The lever cannot currently be pulled.", node);
+                    ErrorResponse("The lever cannot currently be pulled.");
                     return;
                 }
 
                 lever.LeverAnimation();
                 lever.PullLever();
-                node.displayText = "Pulling the lever to launch into orbit...";
+                if (confirmed)
+                {
+                    AppendTerminalText("Pulling the lever to launch into orbit...");
+                    return;
+                }
+                SetTerminalText("Pulling the lever to launch into orbit...");
             }
 
-            public override void Confirmed(Terminal terminal, ref TerminalNode node)
+            public override void Confirmed(Terminal terminal)
             {
-                node.clearPreviousText = false;
-
-                Launch(terminal, ref node);
+                Launch(terminal, true);
             }
         }
         public class DoorCommand : Command
@@ -2057,9 +1758,10 @@ namespace lammOS.Commands
                 AddShortcut("d", id);
             }
 
-            public override void Execute(Terminal terminal, string input, ref TerminalNode node)
+            public override void Execute(Terminal terminal, string input)
             {
                 GameObject.Find(StartOfRound.Instance.hangarDoorsClosed ? "StartButton" : "StopButton").GetComponentInChildren<InteractTrigger>().onInteract.Invoke(GameNetworkManager.Instance.localPlayerController);
+                SetTerminalText("");
             }
         }
         public class LightsCommand : Command
@@ -2072,9 +1774,10 @@ namespace lammOS.Commands
                 AddShortcut("l", id);
             }
 
-            public override void Execute(Terminal terminal, string input, ref TerminalNode node)
+            public override void Execute(Terminal terminal, string input)
             {
                 StartOfRound.Instance.shipRoomLights.ToggleShipLights();
+                SetTerminalText("");
             }
         }
         public class TeleporterCommand : Command
@@ -2086,7 +1789,7 @@ namespace lammOS.Commands
                 description = "Remotely activate the teleporter.";
             }
 
-            public override void Execute(Terminal terminal, string input, ref TerminalNode node)
+            public override void Execute(Terminal terminal, string input)
             {
                 foreach (ShipTeleporter teleporter in UnityEngine.Object.FindObjectsByType<ShipTeleporter>(FindObjectsSortMode.None))
                 {
@@ -2097,16 +1800,17 @@ namespace lammOS.Commands
                             if (teleporter.buttonTrigger.interactable)
                             {
                                 teleporter.PressTeleportButtonOnLocalClient();
+                                SetTerminalText("");
                                 return;
                             }
-                            ErrorResponse("The teleporter is on cooldown.", node);
+                            ErrorResponse("The teleporter is on cooldown.");
                             return;
                         }
-                        ErrorResponse("The teleporter is in storage.", node);
+                        ErrorResponse("The teleporter is in storage.");
                         return;
                     }
                 }
-                ErrorResponse("You do not own a teleporter.", node);
+                ErrorResponse("You do not own a teleporter.");
             }
         }
         public class InverseTeleporterCommand : Command
@@ -2118,7 +1822,7 @@ namespace lammOS.Commands
                 description = "Remotely activate the inverse teleporter.";
             }
 
-            public override void Execute(Terminal terminal, string input, ref TerminalNode node)
+            public override void Execute(Terminal terminal, string input)
             {
                 foreach (ShipTeleporter teleporter in UnityEngine.Object.FindObjectsByType<ShipTeleporter>(FindObjectsSortMode.None))
                 {
@@ -2129,19 +1833,20 @@ namespace lammOS.Commands
                             if (teleporter.buttonTrigger.interactable)
                             {
                                 teleporter.PressTeleportButtonOnLocalClient();
+                                SetTerminalText("");
                                 return;
                             }
-                            ErrorResponse("The inverse teleporter is on cooldown.", node);
+                            ErrorResponse("The inverse teleporter is on cooldown.");
                             return;
                         }
-                        ErrorResponse("The inverse teleporter is in storage.", node);
+                        ErrorResponse("The inverse teleporter is in storage.");
                         return;
                     }
                 }
-                ErrorResponse("You do not own an inverse teleporter.", node);
+                ErrorResponse("You do not own an inverse teleporter.");
             }
         }
-
+        
         public class ScanCommand : Command
         {
             public ScanCommand()
@@ -2153,29 +1858,22 @@ namespace lammOS.Commands
                 AddShortcut("sc", id);
             }
 
-            public override void Execute(Terminal terminal, string input, ref TerminalNode node)
+            public override void Execute(Terminal terminal, string input)
             {
                 int shipCount = 0, shipValue = 0, indoorCount = 0, indoorValue = 0, outdoorCount = 0, outdoorValue = 0;
-                string outdoorItems = "", indoorItems = "";
 
-                int nameLength = 0;
-                int valueLength = 0;
-                GrabbableObject[] objects = UnityEngine.Object.FindObjectsByType<GrabbableObject>(FindObjectsSortMode.None);
-                foreach (GrabbableObject item in objects)
+                List<List<string>> indoorLists = new()
                 {
-                    if (item.itemProperties.isScrap && !item.isInShipRoom)
-                    {
-                        if (item.itemProperties.itemName.Length + 1 > nameLength)
-                        {
-                            nameLength = item.itemProperties.itemName.Length + 1;
-                        }
-                        if (item.scrapValue.ToString().Length > valueLength)
-                        {
-                            valueLength = item.scrapValue.ToString().Length;
-                        }
-                    }
-                }
-
+                    new(),
+                    new()
+                };
+                List<List<string>> outdoorLists = new()
+                {
+                    new(),
+                    new()
+                };
+                
+                GrabbableObject[] objects = UnityEngine.Object.FindObjectsByType<GrabbableObject>(FindObjectsSortMode.None);
                 foreach (GrabbableObject item in objects)
                 {
                     if (!item.itemProperties.isScrap)
@@ -2194,18 +1892,22 @@ namespace lammOS.Commands
                     {
                         indoorCount++;
                         indoorValue += item.scrapValue;
-                        indoorItems += "\n * " + (item.itemProperties.itemName + " ").PadRight(nameLength, ListPaddingCharValue) + " $" + item.scrapValue.ToString().PadLeft(valueLength);
+                        indoorLists[0].Add(item.itemProperties.itemName);
+                        indoorLists[1].Add(item.scrapValue.ToString());
                         continue;
                     }
 
                     outdoorCount++;
                     outdoorValue += item.scrapValue;
-                    outdoorItems += "\n * " + (item.itemProperties.itemName + " ").PadRight(nameLength, ListPaddingCharValue) + " $" + item.scrapValue.ToString().PadLeft(valueLength);
+                    outdoorLists[0].Add(item.itemProperties.itemName);
+                    outdoorLists[1].Add(item.scrapValue.ToString());
                 }
 
-                node.displayText = "Ship: " + shipCount.ToString() + " objects with a value of $" + shipValue.ToString() +
-                    "\n\nIndoors: " + indoorCount.ToString() + " objects with a value of $" + indoorValue.ToString() + indoorItems +
-                    "\n\nOutdoors: " + outdoorCount.ToString() + " objects with a value of $" + outdoorValue.ToString() + outdoorItems;
+                string indoors = HandleListPadding(indoorLists, new List<string>() { " * {ITEM} ", " ${ITEM} " }, new List<string>() { "", "right" }, false) + "\n";
+
+                SetTerminalText("Ship: " + shipCount.ToString() + " scrap with a value of $" + shipValue.ToString() +
+                    "\n\nIndoors: " + indoorCount.ToString() + " scrap with a value of $" + indoorValue.ToString() + "\n" + (indoors == "\n" ? "" : indoors) +
+                    "\nOutdoors: " + outdoorCount.ToString() + " scrap with a value of $" + outdoorValue.ToString() + "\n" + HandleListPadding(outdoorLists, new List<string>() { " * {ITEM} ", " ${ITEM} " }, new List<string>() { "", "right" }, false));
             }
         }
         public class TransmitCommand : Command
@@ -2219,29 +1921,29 @@ namespace lammOS.Commands
                 args = "(9 characters)";
             }
 
-            public override void Execute(Terminal terminal, string input, ref TerminalNode node)
+            public override void Execute(Terminal terminal, string input)
             {
                 SignalTranslator signalTranslator = UnityEngine.Object.FindAnyObjectByType<SignalTranslator>();
                 if (signalTranslator == null)
                 {
-                    ErrorResponse("You do not own a signal translator.", node);
+                    ErrorResponse("You do not own a signal translator.");
                     return;
                 }
                 if (UnityEngine.Time.realtimeSinceStartup - signalTranslator.timeLastUsingSignalTranslator <= 8f)
                 {
-                    ErrorResponse("The signal translator is still in use.", node);
+                    ErrorResponse("The signal translator is still in use.");
                     return;
                 }
 
                 string text = input.Substring(0, Mathf.Min(input.Length, 9));
                 if (string.IsNullOrEmpty(text))
                 {
-                    ErrorResponse("Please enter a 9 character or less message to send.", node);
+                    ErrorResponse("Please enter a 9 character or less message to send.");
                     return;
                 }
 
-                node.displayText = "Transmitting message...";
-                if (!terminal.IsServer)
+                SetTerminalText("Transmitting message...");
+                if (!terminal.IsHost)
                 {
                     signalTranslator.timeLastUsingSignalTranslator = UnityEngine.Time.realtimeSinceStartup;
                 }
@@ -2260,9 +1962,9 @@ namespace lammOS.Commands
                 AddShortcut("c", id);
             }
 
-            public override void Execute(Terminal terminal, string input, ref TerminalNode node)
+            public override void Execute(Terminal terminal, string input)
             {
-                node.displayText = ">";
+                SetTerminalText("");
             }
         }
         public class ReloadCommand : Command
@@ -2274,11 +1976,11 @@ namespace lammOS.Commands
                 description = "Reloads the mod's config and the terminal, updating any potentially outdated information.";
             }
 
-            public override void Execute(Terminal terminal, string input, ref TerminalNode node)
+            public override void Execute(Terminal terminal, string input)
             {
                 lammOS.Load();
 
-                node.displayText = "Reloaded.";
+                SetTerminalText("Reloaded.");
             }
         }
         public class EjectCommand : ConfirmationCommand
@@ -2290,37 +1992,93 @@ namespace lammOS.Commands
                 description = "Eject your crew into space.";
             }
 
-            public override void Execute(Terminal terminal, string input, ref TerminalNode node)
+            public override void Execute(Terminal terminal, string input)
             {
+                if (!terminal.IsHost)
+                {
+                    ErrorResponse("You must be the host to eject the crew.");
+                    return;
+                }
                 if (StartOfRound.Instance.isChallengeFile)
                 {
-                    ErrorResponse("You are unable to be ejected on challenge moons.", node);
+                    ErrorResponse("You are unable to be ejected on challenge moons.");
                     return;
                 }
                 if (!StartOfRound.Instance.inShipPhase)
                 {
-                    ErrorResponse("You must be in orbit to be ejected.", node);
+                    ErrorResponse("You must be in orbit to be ejected.");
                     return;
                 }
                 if (StartOfRound.Instance.firingPlayersCutsceneRunning)
                 {
-                    ErrorResponse("Your crew is already being ejected.", node);
+                    ErrorResponse("Your crew is already being ejected.");
                     return;
                 }
 
                 if (ShowCommandConfirmationsValue)
                 {
-                    currentCommand = this;
-                    node.displayText = "Are you sure you want to eject your crew? There is no going back.\nType CONFIRM to confirm routing.";
+                    blockingLevel = BlockingLevel.UntilSubmission;
+                    SetTerminalText("Are you sure you want to eject your crew? There is no going back.\nType CONFIRM to confirm your decision.");
                     return;
                 }
 
                 StartOfRound.Instance.ManuallyEjectPlayersServerRpc();
+                SetTerminalText("");
             }
 
-            public override void Confirmed(Terminal terminal, ref TerminalNode node)
+            public override void Confirmed(Terminal terminal)
             {
                 StartOfRound.Instance.ManuallyEjectPlayersServerRpc();
+                SetTerminalText("");
+            }
+        }
+        public class WaitCommand : Command
+        {
+            public Coroutine waitCoroutine = null;
+
+            public WaitCommand()
+            {
+                category = "Other";
+                id = "wait";
+                description = "Waits x number of seconds until normal execution may continue, will wait 1 second with no arguments or if the provided arguments are not a valid number.";
+                args = "[Seconds]";
+            }
+
+            public IEnumerator Wait(float time = 1f)
+            {
+                blockingLevel = BlockingLevel.All;
+                yield return new WaitForSeconds(time);
+                blockingLevel = BlockingLevel.None;
+                waitCoroutine = null;
+                currentCommand = null;
+                AppendTerminalText("Waited " + time.ToString() + " seconds.");
+            }
+
+            public override void Execute(Terminal terminal, string input)
+            {
+                float time = 1f;
+                if (input != "")
+                {
+                    float.TryParse(input, out time);
+                }
+
+                waitCoroutine = terminal.StartCoroutine(Wait(time));
+            }
+
+            public override void Handle(Terminal terminal, string input)
+            {
+                SetInputText(terminal.currentText.Substring(inputIndex));
+            }
+
+            public override void QuitTerminal(Terminal terminal)
+            {
+                blockingLevel = BlockingLevel.None;
+                if (waitCoroutine != null)
+                {
+                    terminal.StopCoroutine(waitCoroutine);
+                    waitCoroutine = null;
+                }
+                currentCommand = null;
             }
         }
 
@@ -2334,25 +2092,15 @@ namespace lammOS.Commands
                 AddShortcut("l-", id);
             }
 
-            public override void Execute(Terminal terminal, string input, ref TerminalNode node)
+            public override void Execute(Terminal terminal, string input)
             {
-                node.displayText = "Here are all of your personal macros.\nThey can be inspected using the MACRO command, and ran using the RUN-MACRO command.\n";
-                int length = 0;
-                string result = "";
-                foreach (string macroId in GetMacroIds())
+                List<string> macroList = GetMacroIds();
+                if (macroList.Count == 0)
                 {
-                    result += "\n * " + macroId;
-                    if (macroId.Length > length)
-                    {
-                        length = macroId.Length;
-                    }
-                }
-                if (result == "")
-                {
-                    node.displayText += "+-----------------------------------------------------------+\nYou have no macros, create one with the CREATE-MACRO command.";
+                    SetTerminalText("Here are all of your personal macros.\nThey can be inspected using the MACRO command, and ran using the RUN-MACRO command.\n+" + new string('-', "You have no macros, create one with the CREATE-MACRO command.".Length - 2) + "+\nYou have no macros, create one with the CREATE-MACRO command.");
                     return;
                 }
-                node.displayText += "+" + new string('-', length + 2) + "+" + result;
+                SetTerminalText("Here are all of your personal macros.\nThey can be inspected using the MACRO command, and ran using the RUN-MACRO command.\n" + HandleListPadding(new() { macroList }, new List<string>() { " * {ITEM} " }, new List<string>() { "" }));
             }
         }
         public class MacroCommand : Command
@@ -2366,30 +2114,28 @@ namespace lammOS.Commands
                 args = "<Macro>";
             }
 
-            public override void Execute(Terminal terminal, string input, ref TerminalNode node)
+            public override void Execute(Terminal terminal, string input)
             {
                 if (input == "")
                 {
-                    ErrorResponse("You must enter a macro id.", node);
+                    ErrorResponse("You must enter a macro id.");
                     return;
                 }
 
                 input = input.ToLower();
                 if (!HasMacro(input))
                 {
-                    ErrorResponse("No macro exists with that id.", node);
+                    ErrorResponse("No macro exists with that id.");
                     return;
                 }
 
-                node.displayText = "Macro: " + input + "\nInstructions:";
-                foreach (string instruction in GetMacro(input))
-                {
-                    node.displayText += "\n * " + instruction;
-                }
+                SetTerminalText("Macro: " + input + "\nInstructions:\n" + HandleListPadding(new() { GetMacro(input) }, new List<string>() { " * {ITEM} " }, new List<string>() { "" }, false));
             }
         }
         public class RunMacroCommand : Command
         {
+            public Coroutine macroCoroutine = null;
+
             public RunMacroCommand()
             {
                 category = "Macros";
@@ -2399,79 +2145,91 @@ namespace lammOS.Commands
                 args = "<Macro>";
             }
 
-            public IEnumerator RunMacro(string macroId)
+            public IEnumerator RunMacro(Terminal terminal, string macroId)
             {
                 yield return new WaitForEndOfFrame();
-                macroAppendingText = false;
-
-                string output = "Executing the macro with the id '" + macroId + "':\n\n>";
+                saveSubmissionsToHistory = false;
 
                 foreach (string instruction in GetMacro(macroId))
                 {
-                    TerminalNode dummyNode = ScriptableObject.CreateInstance<TerminalNode>();
-                    dummyNode.displayText = "";
-                    dummyNode.clearPreviousText = true;
-                    dummyNode.terminalEvent = "";
-
-                    output += instruction;
-
-                    if (instruction.StartsWith("wait"))
+                    float start = Time.time;
+                    if (currentCommand == this)
                     {
-                        float time = 1f;
-                        int split = instruction.IndexOf(' ');
-                        if (split != -1)
-                        {
-                            float.TryParse(instruction.Substring(split + 1), out time);
-                        }
-
-                        output += "\n\n>";
-                        dummyNode.displayText = output;
-                        macroAppendingText = true;
-                        Variables.Variables.Terminal.LoadNewNode(dummyNode);
-                        macroAppendingText = false;
-                        yield return new WaitForSeconds(time);
+                        currentCommand = null;
                     }
-                    else
-                    {
-                        HandleCommand(Variables.Variables.Terminal, instruction, ref dummyNode);
-                        dummyNode.clearPreviousText = true;
-                        HandleCommandResult(Variables.Variables.Terminal, dummyNode);
+                    SetInputText(instruction);
+                    terminal.OnSubmit();
 
-                        output += "\n\n" + dummyNode.displayText;
-                        dummyNode.displayText = output;
-                        macroAppendingText = true;
-                        Variables.Variables.Terminal.LoadNewNode(dummyNode);
-                        macroAppendingText = false;
-                        yield return new WaitForSeconds(1f / GetMacroInstructionsPerSecond());
+                    yield return new WaitUntil(() => currentCommand == null || currentCommand.blockingLevel <= BlockingLevel.UntilSubmission);
+                    if (currentCommand == null)
+                    {
+                        currentCommand = this;
+                    }
+                    ForceScrollbar(-1);
+
+                    float time = 1f / GetMacroInstructionsPerSecond() - (Time.time - start);
+                    if (time > 0)
+                    {
+                        yield return new WaitForSeconds(time);
                     }
                 }
 
-                runningMacroCoroutine = null;
+                saveSubmissionsToHistory = true;
+                blockingLevel = BlockingLevel.None;
+                macroCoroutine = null;
+                currentCommand = null;
             }
 
-            public override void Execute(Terminal terminal, string input, ref TerminalNode node)
+            public override void Execute(Terminal terminal, string input)
             {
-                if (runningMacroCoroutine != null)
+                if (macroCoroutine != null)
                 {
-                    ErrorResponse("You cannot run macros within macros.", node);
+                    ErrorResponse("You cannot run a macro within a macro.");
                     return;
                 }
 
                 if (input == "")
                 {
-                    ErrorResponse("You must enter a macro id.", node);
+                    ErrorResponse("You must enter a macro id.");
                     return;
                 }
 
                 input = input.ToLower();
                 if (!HasMacro(input))
                 {
-                    ErrorResponse("No macro exists with that id.", node);
+                    ErrorResponse("No macro exists with that id.");
                     return;
                 }
 
-                runningMacroCoroutine = StartOfRound.Instance.StartCoroutine(RunMacro(input));
-                macroAppendingText = true;
+                blockingLevel = BlockingLevel.UntilTyping;
+                macroCoroutine = terminal.StartCoroutine(RunMacro(terminal, input));
+                SetTerminalText("Executing the macro with the id '" + input + "'");
+            }
+
+            public override void Handle(Terminal terminal, string input)
+            {
+                saveSubmissionsToHistory = true;
+                blockingLevel = BlockingLevel.None;
+                if (macroCoroutine != null)
+                {
+                    terminal.StopCoroutine(macroCoroutine);
+                    macroCoroutine = null;
+                }
+                currentCommand = null;
+                ErrorResponse("Macro execution interrupted by key press.");
+            }
+
+            public override void QuitTerminal(Terminal terminal)
+            {
+                saveSubmissionsToHistory = true;
+                blockingLevel = BlockingLevel.None;
+                if (macroCoroutine != null)
+                {
+                    terminal.StopCoroutine(macroCoroutine);
+                    macroCoroutine = null;
+                }
+                currentCommand = null;
+                ErrorResponse("Macro execution interrupted by leaving the terminal.");
             }
         }
         public class CreateMacroCommand : Command
@@ -2485,25 +2243,25 @@ namespace lammOS.Commands
                 args = "<Macro> (Instructions split by ';')";
             }
 
-            public override void Execute(Terminal terminal, string input, ref TerminalNode node)
+            public override void Execute(Terminal terminal, string input)
             {
                 if (input == "")
                 {
-                    ErrorResponse("You must enter a macro id.", node);
+                    ErrorResponse("You must enter a macro id.");
                     return;
                 }
 
                 int offset = input.IndexOf(' ');
                 if (offset == -1)
                 {
-                    ErrorResponse("You must enter intructions for the macro to run, each one separated by ';'.", node);
+                    ErrorResponse("You must enter intructions for the macro to run, each one separated by ';'.");
                     return;
                 }
 
                 string macroId = input.Substring(0, offset).ToLower();
                 if (HasMacro(macroId))
                 {
-                    ErrorResponse("A macro already exists with that id.", node);
+                    ErrorResponse("A macro already exists with that id.");
                     return;
                 }
 
@@ -2511,7 +2269,7 @@ namespace lammOS.Commands
                 List<string> finalInstructions = new();
                 foreach (string instruction in instructions)
                 {
-                    string trimmedInstruction = instruction.TrimStart(' ').TrimEnd(' ');
+                    string trimmedInstruction = instruction.Trim();
                     if (trimmedInstruction != "")
                     {
                         finalInstructions.Add(trimmedInstruction);
@@ -2520,18 +2278,14 @@ namespace lammOS.Commands
 
                 if (finalInstructions.Count == 0)
                 {
-                    ErrorResponse("You must enter intructions for the macro to run, each one separated by ';'.", node);
+                    ErrorResponse("You must enter intructions for the macro to run, each one separated by ';'.");
                     return;
                 }
 
                 AddMacro(macroId, finalInstructions);
                 Save();
 
-                node.displayText = "Created a new macro with the id '" + macroId + "' with the following instructions:";
-                foreach (string instruction in finalInstructions)
-                {
-                    node.displayText += "\n * " + instruction;
-                }
+                SetTerminalText("Created a new macro with the id '" + macroId + "' with the following instructions:\n" + HandleListPadding(new() { finalInstructions }, new List<string>() { " * {ITEM} " }, new List<string>() { "" }, false));
             }
         }
         public class EditMacroCommand : Command
@@ -2545,25 +2299,25 @@ namespace lammOS.Commands
                 args = "<Macro> (Instructions split by ';')";
             }
 
-            public override void Execute(Terminal terminal, string input, ref TerminalNode node)
+            public override void Execute(Terminal terminal, string input)
             {
                 if (input == "")
                 {
-                    ErrorResponse("You must enter a macro id.", node);
+                    ErrorResponse("You must enter a macro id.");
                     return;
                 }
 
                 int offset = input.IndexOf(' ');
                 if (offset == -1)
                 {
-                    ErrorResponse("You must enter intructions for the macro to run, each one separated by ';'.", node);
+                    ErrorResponse("You must enter intructions for the macro to run, each one separated by ';'.");
                     return;
                 }
 
                 string macroId = input.Substring(0, offset).ToLower();
                 if (!HasMacro(macroId))
                 {
-                    ErrorResponse("No macro exists with that id.", node);
+                    ErrorResponse("No macro exists with that id.");
                     return;
                 }
 
@@ -2571,7 +2325,7 @@ namespace lammOS.Commands
                 List<string> finalInstructions = new();
                 foreach (string instruction in instructions)
                 {
-                    string trimmedInstruction = instruction.TrimStart(' ').TrimEnd(' ');
+                    string trimmedInstruction = instruction.Trim();
                     if (trimmedInstruction != "")
                     {
                         finalInstructions.Add(trimmedInstruction);
@@ -2580,18 +2334,14 @@ namespace lammOS.Commands
 
                 if (finalInstructions.Count == 0)
                 {
-                    ErrorResponse("You must enter intructions for the macro to run, each one separated by ';'.", node);
+                    ErrorResponse("You must enter intructions for the macro to run, each one separated by ';'.");
                     return;
                 }
 
                 ModifyMacro(macroId, finalInstructions);
                 Save();
 
-                node.displayText = "Edited the macro with the id '" + macroId + "' giving it the new instructions:";
-                foreach (string instruction in finalInstructions)
-                {
-                    node.displayText += "\n * " + instruction;
-                }
+                SetTerminalText("Edited the macro with the id '" + macroId + "' giving it the new instructions:\n" + HandleListPadding(new() { finalInstructions }, new List<string>() { " * {ITEM} " }, new List<string>() { "" }, false));
             }
         }
         public class DeleteMacroCommand : Command
@@ -2605,25 +2355,25 @@ namespace lammOS.Commands
                 args = "<Macro>";
             }
 
-            public override void Execute(Terminal terminal, string input, ref TerminalNode node)
+            public override void Execute(Terminal terminal, string input)
             {
                 if (input == "")
                 {
-                    ErrorResponse("You must enter a macro id.", node);
+                    ErrorResponse("You must enter a macro id.");
                     return;
                 }
 
                 input = input.ToLower();
                 if (!HasMacro(input))
                 {
-                    ErrorResponse("No macro exists with that id.", node);
+                    ErrorResponse("No macro exists with that id.");
                     return;
                 }
 
                 RemoveMacro(input);
                 Save();
 
-                node.displayText = "Deleted the macro with the id '" + input + "'.";
+                SetTerminalText("Deleted the macro with the id '" + input + "'.");
             }
         }
 
@@ -2636,7 +2386,7 @@ namespace lammOS.Commands
                 hidden = true;
             }
 
-            public void LogShortestChars()
+            public static void LogShortestChars()
             {
                 string text = "- Shortest Characters -\nEntities:";
                 foreach (Entity entity in entities.Values)
@@ -2666,143 +2416,93 @@ namespace lammOS.Commands
                 lammOS.Logger.LogInfo(text);
             }
 
-            public void LogKeyword(string args, Terminal terminal)
+            public static string GetKeyword(TerminalKeyword keyword, int indent = 2)
             {
-                int index = -1;
-                int.TryParse(args, out index);
-                if (index < 0 || index >= terminal.terminalNodes.allKeywords.Length)
+                if (keyword == null)
                 {
-                    return;
+                    return "Keyword: null";
                 }
-                TerminalKeyword k = terminal.terminalNodes.allKeywords[index];
-                string text = "Keyword: " + k.word +
-                "\n  accessTerminalObjects: " + k.accessTerminalObjects.ToString() +
-                "\n  defaultVerb: " + (k.defaultVerb == null ? "null" : k.defaultVerb.word) +
-                "\n  isVerb: " + k.isVerb.ToString() + "\n  specialKeywordResult:\n  displayText: " + k.specialKeywordResult.displayText +
-                "\n  clearPreviousText: " + k.specialKeywordResult.clearPreviousText.ToString() +
-                "\n  terminalEvent: " + k.specialKeywordResult.terminalEvent +
-                "\n  acceptAnything: " + k.specialKeywordResult.acceptAnything.ToString() +
-                "\n  isConfirmationNode: " + k.specialKeywordResult.isConfirmationNode.ToString() +
-                "\n  maxCharactersToType" + k.specialKeywordResult.maxCharactersToType.ToString() +
+                string text = "Keyword: " + keyword.word +
+                "\n" + new string(' ', indent) + "accessTerminalObjects: " + keyword.accessTerminalObjects.ToString() +
+                "\n" + new string(' ', indent) + "defaultVerb: " + (keyword.defaultVerb == null ? "null" : keyword.defaultVerb.word) +
+                "\n" + new string(' ', indent) + "isVerb: " + keyword.isVerb.ToString();
 
-                "\n  itemCost: " + k.specialKeywordResult.itemCost.ToString() +
-                "\n  buyItemIndex: " + k.specialKeywordResult.buyItemIndex.ToString() +
-                "\n  buyRerouteToMoon: " + k.specialKeywordResult.buyRerouteToMoon.ToString() +
-
-                "\n  buyUnlockable: " + k.specialKeywordResult.buyUnlockable.ToString() +
-                "\n  returnFromStorage: " + k.specialKeywordResult.returnFromStorage.ToString() +
-                "\n  shipUnlockableID: " + k.specialKeywordResult.shipUnlockableID.ToString() +
-
-                "\n  displayPlanetInfo: " + k.specialKeywordResult.displayPlanetInfo.ToString() +
-                "\n  storyLogFileID: " + k.specialKeywordResult.storyLogFileID.ToString() +
-                "\n  creatureFileID: " + k.specialKeywordResult.creatureFileID.ToString() +
-                "\n  creatureName: " + k.specialKeywordResult.creatureName +
-
-                "\n  playClip(null?): " + (k.specialKeywordResult.playClip == null ? "null" : "not null") +
-                "\n  playSyncedClip: " + k.specialKeywordResult.playSyncedClip.ToString() +
-                "\n  displayTexture(null?):" + (k.specialKeywordResult.displayTexture == null ? "null" : "not null") +
-                "\n  loadImageSlowly: " + k.specialKeywordResult.loadImageSlowly.ToString() +
-                "\n  persistentImage: " + k.specialKeywordResult.persistentImage.ToString() +
-                "\n  displayVideo(null?):" + (k.specialKeywordResult.displayVideo == null ? "null" : "not null") +
-
-                "\n  overrideOptions: " + k.specialKeywordResult.overrideOptions.ToString() +
-                "\n  terminalOptions:";
-                foreach (CompatibleNoun cn in k.specialKeywordResult.terminalOptions)
+                if (keyword.specialKeywordResult == null)
                 {
-                    text += "\n    " + cn.noun.word;
+                    text += "\n\n" + new string(' ', indent) + "specialKeywordResult: null";
                 }
-                lammOS.Logger.LogInfo(text);
+                else
+                {
+                    text += "\n\n" + new string(' ', indent) + "specialKeywordResult: " + GetNode(keyword.specialKeywordResult, indent + 2);
+                }
+                
+                text += "\n" + new string(' ', indent) + "compatibleNouns:";
+                if (keyword.compatibleNouns == null || keyword.compatibleNouns.Length == 0)
+                {
+                    text += " null";
+                }
+                else
+                {
+                    for (int i = 0; i < keyword.compatibleNouns.Length; i++)
+                    {
+                        text += "\n" + new string(' ', indent) + i.ToString() + ":\n" + new string(' ', indent) + GetKeyword(keyword.compatibleNouns[i].noun, indent + 2) + "\n" + new string(' ', indent) + GetNode(keyword.compatibleNouns[i].result, indent + 2);
+                    }
+                }
+
+                return text;
             }
-            public void LogNode(string args, Terminal terminal)
+            public static string GetNode(TerminalNode node, int indent = 2)
             {
-                int index = -1;
-                int.TryParse(args, out index);
-                if (index < 0 || index >= terminal.terminalNodes.terminalNodes.Count)
+                if (node == null)
                 {
-                    return;
+                    return "Node: null";
                 }
-                TerminalNode n = terminal.terminalNodes.terminalNodes[index];
-                string text = "Node Info:\n  displayText: " + n.displayText +
-                "\n  clearPreviousText: " + n.clearPreviousText.ToString() +
-                "\n  terminalEvent: " + n.terminalEvent +
-                "\n  acceptAnything: " + n.acceptAnything.ToString() +
-                "\n  isConfirmationNode: " + n.isConfirmationNode.ToString() +
-                "\n  maxCharactersToType" + n.maxCharactersToType.ToString() +
 
-                "\n  itemCost: " + n.itemCost.ToString() +
-                "\n  buyItemIndex: " + n.buyItemIndex.ToString() +
-                "\n  buyRerouteToMoon: " + n.buyRerouteToMoon.ToString() +
+                string text = "Node:\n" + new string(' ', indent) + "displayText: " + node.displayText +
+                "\n" + new string(' ', indent) + "clearPreviousText: " + node.clearPreviousText.ToString() +
+                "\n" + new string(' ', indent) + "terminalEvent: " + node.terminalEvent +
+                "\n" + new string(' ', indent) + "acceptAnything: " + node.acceptAnything.ToString() +
+                "\n" + new string(' ', indent) + "isConfirmationNode: " + node.isConfirmationNode.ToString() +
+                "\n" + new string(' ', indent) + "maxCharactersToType: " + node.maxCharactersToType.ToString() +
 
-                "\n  buyUnlockable: " + n.buyUnlockable.ToString() +
-                "\n  returnFromStorage: " + n.returnFromStorage.ToString() +
-                "\n  shipUnlockableID: " + n.shipUnlockableID.ToString() +
+                "\n\n" + new string(' ', indent) + "itemCost: " + node.itemCost.ToString() +
+                "\n" + new string(' ', indent) + "buyItemIndex: " + node.buyItemIndex.ToString() +
+                "\n" + new string(' ', indent) + "buyRerouteToMoon: " + node.buyRerouteToMoon.ToString() +
 
-                "\n  displayPlanetInfo: " + n.displayPlanetInfo.ToString() +
-                "\n  storyLogFileID: " + n.storyLogFileID.ToString() +
-                "\n  creatureFileID: " + n.creatureFileID.ToString() +
-                "\n  creatureName: " + n.creatureName +
+                "\n\n" + new string(' ', indent) + "buyUnlockable: " + node.buyUnlockable.ToString() +
+                "\n" + new string(' ', indent) + "returnFromStorage: " + node.returnFromStorage.ToString() +
+                "\n" + new string(' ', indent) + "shipUnlockableID: " + node.shipUnlockableID.ToString() +
 
-                "\n  playClip(null?): " + (n.playClip == null ? "null" : "not null") +
-                "\n  playSyncedClip: " + n.playSyncedClip.ToString() +
-                "\n  displayTexture(null?):" + (n.displayTexture == null ? "null" : "not null") +
-                "\n  loadImageSlowly: " + n.loadImageSlowly.ToString() +
-                "\n  persistentImage: " + n.persistentImage.ToString() +
-                "\n  displayVideo(null?):" + (n.displayVideo == null ? "null" : "not null") +
+                "\n\n" + new string(' ', indent) + "displayPlanetInfo: " + node.displayPlanetInfo.ToString() +
+                "\n" + new string(' ', indent) + "storyLogFileID: " + node.storyLogFileID.ToString() +
+                "\n" + new string(' ', indent) + "creatureFileID: " + node.creatureFileID.ToString() +
+                "\n" + new string(' ', indent) + "creatureName: " + node.creatureName +
 
-                "\n  overrideOptions: " + n.overrideOptions.ToString() +
-                "\n  terminalOptions:";
-                foreach (CompatibleNoun cn in n.terminalOptions)
+                "\n\n" + new string(' ', indent) + "playClip(null?): " + (node.playClip == null ? "null" : "not null") +
+                "\n" + new string(' ', indent) + "playSyncedClip: " + node.playSyncedClip.ToString() +
+                "\n" + new string(' ', indent) + "displayTexture(null?): " + (node.displayTexture == null ? "null" : "not null") +
+                "\n" + new string(' ', indent) + "loadImageSlowly: " + node.loadImageSlowly.ToString() +
+                "\n" + new string(' ', indent) + "persistentImage: " + node.persistentImage.ToString() +
+                "\n" + new string(' ', indent) + "displayVideo(null?): " + (node.displayVideo == null ? "null" : "not null") +
+
+                "\n\n" + new string(' ', indent) + "overrideOptions: " + node.overrideOptions.ToString() +
+                "\n" + new string(' ', indent) + "terminalOptions:";
+                if (node.terminalOptions == null || node.terminalOptions.Length == 0)
                 {
-                    text += "\n    " + cn.noun.word;
+                    text += " null";
                 }
-                lammOS.Logger.LogInfo(text);
-            }
-            public void LogSpecialNode(string args, Terminal terminal)
-            {
-                int index = -1;
-                int.TryParse(args, out index);
-                if (index < 0 || index >= terminal.terminalNodes.specialNodes.Count)
+                else
                 {
-                    return;
+                    for (int i = 0; i < node.terminalOptions.Length; i++)
+                    {
+                        text += "\n" + new string(' ', indent) + i.ToString() + ":\n" + new string(' ', indent) + GetKeyword(node.terminalOptions[i].noun, indent + 2) + "\n" + new string(' ', indent) + GetNode(node.terminalOptions[i].result, indent + 2);
+                    }
                 }
-                TerminalNode n = terminal.terminalNodes.specialNodes[index];
-                string text = "Special Node Info:\n  displayText: " + n.displayText +
-                "\n  clearPreviousText: " + n.clearPreviousText.ToString() +
-                "\n  terminalEvent: " + n.terminalEvent +
-                "\n  acceptAnything: " + n.acceptAnything.ToString() +
-                "\n  isConfirmationNode: " + n.isConfirmationNode.ToString() +
-                "\n  maxCharactersToType" + n.maxCharactersToType.ToString() +
-
-                "\n  itemCost: " + n.itemCost.ToString() +
-                "\n  buyItemIndex: " + n.buyItemIndex.ToString() +
-                "\n  buyRerouteToMoon: " + n.buyRerouteToMoon.ToString() +
-
-                "\n  buyUnlockable: " + n.buyUnlockable.ToString() +
-                "\n  returnFromStorage: " + n.returnFromStorage.ToString() +
-                "\n  shipUnlockableID: " + n.shipUnlockableID.ToString() +
-
-                "\n  displayPlanetInfo: " + n.displayPlanetInfo.ToString() +
-                "\n  storyLogFileID: " + n.storyLogFileID.ToString() +
-                "\n  creatureFileID: " + n.creatureFileID.ToString() +
-                "\n  creatureName: " + n.creatureName +
-
-                "\n  playClip(null?): " + (n.playClip == null ? "null" : "not null") +
-                "\n  playSyncedClip: " + n.playSyncedClip.ToString() +
-                "\n  displayTexture(null?):" + (n.displayTexture == null ? "null" : "not null") +
-                "\n  loadImageSlowly: " + n.loadImageSlowly.ToString() +
-                "\n  persistentImage: " + n.persistentImage.ToString() +
-                "\n  displayVideo(null?):" + (n.displayVideo == null ? "null" : "not null") +
-
-                "\n  overrideOptions: " + n.overrideOptions.ToString() +
-                "\n  terminalOptions:";
-                foreach (CompatibleNoun cn in n.terminalOptions)
-                {
-                    text += "\n    " + cn.noun.word;
-                }
-                lammOS.Logger.LogInfo(text);
+                
+                return text;
             }
 
-            public override void Execute(Terminal terminal, string input, ref TerminalNode node)
+            public override void Execute(Terminal terminal, string input)
             {
                 input = input.ToLower();
                 int split = input.IndexOf(' ');
@@ -2810,7 +2510,7 @@ namespace lammOS.Commands
                 {
                     split = input.Length;
                 }
-                string args = input.Substring(split);
+                string args = input.Substring(split).TrimStart(' ');
                 input = input.Substring(0, split);
 
                 switch (input)
@@ -2827,12 +2527,12 @@ namespace lammOS.Commands
                         }
                     case "play_synced":
                         {
-                            int index = -1;
                             if (args == "")
                             {
                                 break;
                             }
 
+                            int index = -1;
                             int.TryParse(args, out index);
                             if (index < 0)
                             {
@@ -2845,11 +2545,53 @@ namespace lammOS.Commands
                             terminal.PlayTerminalAudioServerRpc(index);
                             break;
                         }
+                    case "set_percent":
+                        {
+                            if (!terminal.IsHost)
+                            {
+                                break;
+                            }
+
+                            if (args == "")
+                            {
+                                break;
+                            }
+
+                            int split2 = args.IndexOf(' ');
+                            if (split2 == -1)
+                            {
+                                break;
+                            }
+
+                            int index = -1;
+                            int.TryParse(args.Substring(0, split2), out index);
+                            if (index < 0)
+                            {
+                                break;
+                            }
+                            if (index >= terminal.itemSalesPercentages.Length)
+                            {
+                                break;
+                            }
+
+                            int percent = -1;
+                            int.TryParse(args.Substring(split2 + 1), out percent);
+                            if (percent < 10)
+                            {
+                                break;
+                            }
+                            if (percent > 100)
+                            {
+                                break;
+                            }
+
+                            terminal.itemSalesPercentages[index] = percent;
+                            break;
+                        }
                     case "money":
                         {
-                            if (!terminal.IsServer)
+                            if (!terminal.IsHost)
                             {
-                                lammOS.Logger.LogInfo("You must be the host of the lobby to use that debug command.");
                                 break;
                             }
 
@@ -2882,7 +2624,15 @@ namespace lammOS.Commands
                         }
                     case "keyword":
                         {
-                            LogKeyword(args, terminal);
+                            int index = -1;
+                            int.TryParse(args, out index);
+                            if (index < 0 || index >= terminal.terminalNodes.allKeywords.Length)
+                            {
+                                lammOS.Logger.LogInfo("Not within range.");
+                                return;
+                            }
+
+                            lammOS.Logger.LogInfo(GetKeyword(terminal.terminalNodes.allKeywords[index]));
                             break;
                         }
                     case "nodes":
@@ -2890,49 +2640,150 @@ namespace lammOS.Commands
                             lammOS.Logger.LogInfo("Nodes: " + terminal.terminalNodes.terminalNodes.Count.ToString());
                             break;
                         }
+                    case "node":
+                        {
+                            int index = -1;
+                            int.TryParse(args, out index);
+                            if (index < 0 || index >= terminal.terminalNodes.terminalNodes.Count)
+                            {
+                                return;
+                            }
+
+                            lammOS.Logger.LogInfo(GetNode(terminal.terminalNodes.terminalNodes[index]));
+                            break;
+                        }
                     case "specialnodes":
                         {
                             lammOS.Logger.LogInfo("Special Nodes: " + terminal.terminalNodes.specialNodes.Count.ToString());
                             break;
                         }
-                    case "node":
-                        {
-                            LogNode(args, terminal);
-                            break;
-                        }
                     case "specialnode":
                         {
-                            LogSpecialNode(args, terminal);
+                            int index = -1;
+                            int.TryParse(args, out index);
+                            if (index < 0 || index >= terminal.terminalNodes.specialNodes.Count)
+                            {
+                                return;
+                            }
+
+                            lammOS.Logger.LogInfo(GetNode(terminal.terminalNodes.specialNodes[index]));
+                            break;
+                        }
+                }
+                SetTerminalText("");
+            }
+        }
+
+        public abstract class ConfirmationCommand : Command
+        {
+            public abstract void Confirmed(Terminal terminal);
+
+            public override void Handle(Terminal terminal, string input)
+            {
+                blockingLevel = BlockingLevel.None;
+                if ("confirm".StartsWith(input.ToLower()))
+                {
+                    Confirmed(terminal);
+                    return;
+                }
+                AppendTerminalText("");
+            }
+        }
+        
+        public class AlphanumericCodeCommand : Command
+        {
+            public AlphanumericCodeCommand(string alphanumericCode)
+            {
+                category = "Alphanumeric Code";
+                id = alphanumericCode;
+                description = "An alphanumeric code command.\n\nDefault:\nDefault functionality.\n\nToggle:\nOnly toggle the state of big doors.\n\nDeactivate:\nOnly deactivate turrets and landmines.\n\nActivate:\nDetonate landmines and make turrets go berserk.\nNOTE: This action is not recommended for use by\nThe Company for being too funny.";
+                args = "[Default|Toggle|Deactivate|Activate]";
+                hidden = true;
+            }
+
+            public bool ExecuteActivateAction(TerminalAccessibleObject tao)
+            {
+                Turret turret = tao.gameObject.GetComponent<Turret>();
+                if (turret != null)
+                {
+                    ((IHittable)turret).Hit(0, Vector3.zero);
+                    return true;
+                }
+
+                Landmine landmine = tao.gameObject.GetComponent<Landmine>();
+                if (landmine != null)
+                {
+                    ((IHittable)landmine).Hit(0, Vector3.zero);
+                    return true;
+                }
+
+                return false;
+            }
+            public void ExecuteAction(string action)
+            {
+                TerminalAccessibleObject[] taos = UnityEngine.Object.FindObjectsByType<TerminalAccessibleObject>(FindObjectsSortMode.None);
+                switch (action)
+                {
+                    case "toggle":
+                        {
+                            foreach (TerminalAccessibleObject tao in taos)
+                            {
+                                if (tao.objectCode == id && tao.isBigDoor)
+                                {
+                                    tao.CallFunctionFromTerminal();
+                                }
+                            }
+                            break;
+                        }
+                    case "deactivate":
+                        {
+                            foreach (TerminalAccessibleObject tao in taos)
+                            {
+                                if (tao.objectCode == id && !tao.isBigDoor)
+                                {
+                                    tao.CallFunctionFromTerminal();
+                                }
+                            }
+                            break;
+                        }
+                    case "activate":
+                            {
+                            foreach (TerminalAccessibleObject tao in taos)
+                            {
+                                if (tao.objectCode == id && !tao.isBigDoor)
+                                {
+                                    ExecuteActivateAction(tao);
+                                }
+                            }
+                            break;
+                        }
+                    default:
+                        {
+                            foreach (TerminalAccessibleObject tao in taos)
+                            {
+                                if (tao.objectCode == id)
+                                {
+                                    tao.CallFunctionFromTerminal();
+                                }
+                            }
                             break;
                         }
                 }
             }
-        }
 
-        public class CodeCommand : Command
-        {
-            public CodeCommand(string alphanumericCode)
-            {
-                category = "Alphanumeric Codes";
-                id = alphanumericCode;
-                description = "An alphanumeric code command.";
-                args = GetCommand("code").args;
-                hidden = true;
-            }
-
-            public override void Execute(Terminal terminal, string input, ref TerminalNode node)
+            public override void Execute(Terminal terminal, string input)
             {
                 string action = "default";
                 if (input != "")
                 {
                     input = input.ToLower();
                     List<string> actions = new()
-                        {
-                            "default",
-                            "toggle",
-                            "deactivate",
-                            "activate"
-                        };
+                    {
+                        "default",
+                        "toggle",
+                        "deactivate",
+                        "activate"
+                    };
 
                     foreach (string a in actions)
                     {
@@ -2942,128 +2793,73 @@ namespace lammOS.Commands
                             break;
                         }
                     }
-                    if (action != "toggle" && CheckNotEnoughChars(input.Length, action.Length, node))
+                    if (action != "default" && CheckNotEnoughChars(input.Length, action.Length))
                     {
                         return;
                     }
                 }
-                if (!GetCommand("code-" + action).enabled)
+                if (!GetCommand("alphanumericcode+" + action).enabled)
                 {
-                    ErrorResponse("That type of action is not enabled by the host.", node);
+                    ErrorResponse("That type of action has not been enabled by the host.");
                     return;
                 }
 
-                TerminalAccessibleObject[] objects = UnityEngine.Object.FindObjectsByType<TerminalAccessibleObject>(FindObjectsSortMode.None);
-                switch (action)
-                {
-                    case "default":
-                        {
-                            foreach (TerminalAccessibleObject obj in objects)
-                            {
-                                if (obj.objectCode == id)
-                                {
-                                    obj.CallFunctionFromTerminal();
-                                }
-                            }
-                            break;
-                        }
-                    case "toggle":
-                        {
-                            foreach (TerminalAccessibleObject obj in objects)
-                            {
-                                if (obj.objectCode == id && obj.isBigDoor)
-                                {
-                                    obj.CallFunctionFromTerminal();
-                                }
-                            }
-                            break;
-                        }
-                    case "deactivate":
-                        {
-                            foreach (TerminalAccessibleObject obj in objects)
-                            {
-                                if (obj.objectCode == id && !obj.isBigDoor)
-                                {
-                                    obj.CallFunctionFromTerminal();
-                                }
-                            }
-                            break;
-                        }
-                    case "activate":
-                        {
-                            Landmine[] landmines = UnityEngine.Object.FindObjectsByType<Landmine>(FindObjectsSortMode.None);
-                            Turret[] turrets = UnityEngine.Object.FindObjectsByType<Turret>(FindObjectsSortMode.None);
-                            foreach (TerminalAccessibleObject obj in objects)
-                            {
-                                if (obj.objectCode == id && !obj.isBigDoor)
-                                {
-                                    foreach (Landmine landmine in landmines)
-                                    {
-                                        if (landmine.NetworkObjectId == obj.NetworkObjectId)
-                                        {
-                                            ((IHittable)landmine).Hit(0, Vector3.zero);
-                                        }
-                                    }
-
-                                    foreach (Turret turret in turrets)
-                                    {
-                                        if (turret.NetworkObjectId == obj.NetworkObjectId && turret.turretMode != TurretMode.Berserk)
-                                        {
-                                            ((IHittable)turret).Hit(0, Vector3.zero);
-                                        }
-                                    }
-                                }
-                            }
-                            break;
-                        }
-                }
-
+                ExecuteAction(action);
                 terminal.codeBroadcastAnimator.SetTrigger("display");
-                terminal.terminalAudio.PlayOneShot(terminal.codeBroadcastSFX, 1f);
+                PlayClip(terminal.codeBroadcastSFX);
+                SetTerminalText("");
             }
         }
-        public class DummyCommand : Command
+        public class CommandArgument : Command
         {
-            public DummyCommand(string category, string id, string description, string args = "", bool hidden = false, bool enabled = true)
+            public CommandArgument(string commandId, string argument, bool enabled = true)
             {
-                this.category = category;
-                this.id = id;
-                this.description = description;
-                this.args = args;
-                this.hidden = hidden;
+                id = commandId + "+" + argument;
+                description = "A command argument for the '" + commandId + "' command.";
+                hidden = true;
                 defaultEnabled = enabled;
             }
 
-            public override void Execute(Terminal terminal, string input, ref TerminalNode node)
+            public override void Execute(Terminal terminal, string args)
             {
-                node.displayText = "This command doen't do anything, and is only here to give helpful information. Enter 'HELP " + id.ToUpper() + "' to learn why this command is here.\n\n>";
+                currentCommand = null;
             }
         }
 
-        public abstract class ConfirmationCommand : Command
+        public class LategameCompatibiltyCommand : CompatibilityCommand
         {
-            public abstract void Confirmed(Terminal terminal, ref TerminalNode node);
-
-            internal static void Handle(Terminal terminal, string input, ref TerminalNode node)
+            public LategameCompatibiltyCommand()
             {
-                if ("confirm".StartsWith(input))
-                {
-                    if (CheckNotEnoughChars(input.Length, 7, node))
-                    {
-                        return;
-                    }
-                    (currentCommand as ConfirmationCommand).Confirmed(terminal, ref node);
-                    return;
-                }
-                node.displayText = ">";
+                category = "Lategame Upgrades";
+                id = "lategame";
+                description = "Displays information related to the Lategame Upgrades mod.";
             }
         }
+        public class LguCompatibiltyCommand : CompatibilityCommand
+        {
+            public LguCompatibiltyCommand()
+            {
+                category = "Lategame Upgrades";
+                id = "lgu";
+                description = "Displays the purchasable upgrades from the Lategame Upgrades store.";
+            }
+        }
+
+        public class CompatibilityCommand : Command
+        {
+            public override void Execute(Terminal terminal, string args)
+            {
+                currentCommand = null;
+            }
+        }
+
         public abstract class Command
         {
             public string category = "Uncategorized";
             public string id { get; internal set; } = "";
             public string description = "";
             public string args = "";
+            public BlockingLevel blockingLevel = BlockingLevel.None;
             public bool hidden = false;
             internal bool defaultEnabled = true;
             public bool enabled
@@ -3074,64 +2870,118 @@ namespace lammOS.Commands
                 }
             }
 
-            public static void ErrorResponse(string response, TerminalNode node)
+            public static void ErrorResponse(string response)
             {
-                node.displayText = response;
-                node.playSyncedClip = terminalSyncedSounds["error"];
+                SetTerminalText("<color=#ff1f00>" + response + "</color>");
+                PlaySyncedClip(terminalSyncedSounds["error"]);
             }
-            public static bool CheckNotEnoughChars(int inputLength, int resultLength, TerminalNode node)
+            public static bool CheckNotEnoughChars(int inputLength, int resultLength)
             {
                 if (inputLength < Mathf.Min(CharsToAutocompleteValue, resultLength))
                 {
-                    ErrorResponse("Not enough characters were input to autocomplete a result. The current requirement is " + CharsToAutocompleteValue.ToString() + " characters.", node);
+                    ErrorResponse("Not enough characters were input to autocomplete a result. The current requirement is " + CharsToAutocompleteValue.ToString() + " characters.");
                     return true;
                 }
                 return false;
             }
 
-            public abstract void Execute(Terminal terminal, string input, ref TerminalNode node);
-
-            internal static void Handle(string commandId, Terminal terminal, string input, ref TerminalNode node)
+            public static string HandleListPadding(List<List<string>> itemLists, List<string> itemFormats, List<string> itemAlignments, bool separator = true)
             {
-                if (IsShortcut(commandId))
+                int totalLength = 0;
+                List<int> lengths = new();
+                for (int i = 0; i < itemLists.Count; i++)
                 {
-                    commandId = GetCommandIdByShortcut(commandId);
-                    if (runningMacroCoroutine == null)
+                    List<string> items = itemLists[i];
+                    int length = 0;
+
+                    for (int j = 0; j < items.Count; j++)
                     {
-                        terminal.screenText.text = terminal.screenText.text.Substring(0, terminal.screenText.text.Length - terminal.textAdded) + commandId;
-                        if (input != "")
+                        if (items[j] == null)
                         {
-                            terminal.screenText.text += " " + input;
+                            continue;
+                        }
+                        int itemLength = itemFormats[i].Replace("{ITEM}", items[j]).Length;
+                        if (itemLength > length)
+                        {
+                            length = itemLength;
                         }
                     }
+                    totalLength += length;
+                    length -= itemFormats[i].Replace("{ITEM}", "").Length;
+                    lengths.Add(length);
                 }
 
-                Command command = GetCommand(commandId);
-                if (command == null)
+                List<string> result = new();
+                for (int i = 0; i < itemLists[0].Count; i++)
                 {
-                    node.displayText = "Unknown command: '" + commandId + "'\n\n>";
-                    node.playSyncedClip = terminalSyncedSounds["error"];
-                    return;
-                }
-                if (!command.enabled)
-                {
-                    ErrorResponse("That command is disabled by the host.\n\n>", node);
-                    return;
+                    bool hasContent = false;
+                    string text = "";
+                    for (int j = itemLists.Count - 1; j >= 0; j--)
+                    {
+                        if (itemLists[j][i] == null)
+                        {
+                            if (hasContent)
+                            {
+                                text = new string(ListPaddingCharValue, lengths[j]) + text;
+                            }
+                            continue;
+                        }
+
+                        switch (itemAlignments[j])
+                        {
+                            case "right":
+                                {
+                                    itemLists[j][i] = itemLists[j][i].PadLeft(lengths[j]);
+                                    break;
+                                }
+                            case "rightChar":
+                                {
+                                    if (hasContent)
+                                    {
+                                        itemLists[j][i] = itemLists[j][i].PadLeft(lengths[j], ListPaddingCharValue);
+                                    }
+                                    break;
+                                }
+                            case "left":
+                                {
+                                    itemLists[j][i] = itemLists[j][i].PadRight(lengths[j]);
+                                    break;
+                                }
+                            default:
+                                {
+                                    if (hasContent)
+                                    {
+                                        itemLists[j][i] = itemLists[j][i].PadRight(lengths[j], ListPaddingCharValue);
+                                    }
+                                    break;
+                                }
+                        }
+                        hasContent = true;
+
+                        text = itemFormats[j].Replace("{ITEM}", itemLists[j][i]) + text;
+                    }
+
+                    result.Add(text);
                 }
 
-                try
+                string output = string.Join('\n', result);
+                if (separator)
                 {
-                    command.Execute(terminal, input, ref node);
+                    output = "+" + new string('-', Mathf.Min(MaxTerminalCharWidth, totalLength) - 2) + "+\n" + output;
                 }
-                catch (Exception e)
-                {
-                    node = ScriptableObject.CreateInstance<TerminalNode>();
-                    node.displayText = "An error occurred executing the command: '" + commandId + "'\n\n>";
-                    node.clearPreviousText = true;
-                    node.terminalEvent = "";
-                    node.playSyncedClip = terminalSyncedSounds["error"];
-                    lammOS.Logger.LogError("An error occurred executing the command: '" + commandId + "'\n" + e.ToString());
-                }
+                return output;
+            }
+
+            public abstract void Execute(Terminal terminal, string args);
+
+            public virtual void Handle(Terminal terminal, string input)
+            {
+                blockingLevel = BlockingLevel.None;
+            }
+
+            public virtual void QuitTerminal(Terminal terminal)
+            {
+                blockingLevel = BlockingLevel.None;
             }
         }
     }

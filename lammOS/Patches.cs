@@ -1,74 +1,131 @@
 ﻿using HarmonyLib;
-using System;
 using UnityEngine;
 using static lammOS.lammOS;
 using static lammOS.Commands.Commands;
-using static lammOS.Keybinds.Keybinds;
-using static lammOS.Variables.Variables;
+using static lammOS.NewTerminal.NewTerminal;
 
 namespace lammOS.Patches
 {
     public static class Patches
     {
-        internal static string currentLoadedNode = "";
-        internal static string startupNodeText = "";
-        internal static string helpNodeText = "";
-
         [HarmonyPatch(typeof(Terminal))]
-        public static partial class TerminalPatches
+        public static class TerminalPatches
         {
-            [HarmonyPatch("Awake")]
-            [HarmonyPostfix]
-            [HarmonyPriority(-2147483648)]
-            public static void PostAwake(ref Terminal __instance)
-            {
-                Variables.Variables.Terminal = __instance;
-            }
-
             [HarmonyPatch("Start")]
             [HarmonyPostfix]
             [HarmonyPriority(-2147483648)]
             public static void PostStart(ref Terminal __instance)
             {
-                Variables.Variables.Terminal = __instance;
+                NewTerminal.NewTerminal.Terminal = __instance;
 
-                lammOS.Setup();
+                Setup();
             }
 
-            [HarmonyPatch("ParsePlayerSentence")]
-            [HarmonyPrefix]
-            [HarmonyPriority(2147483647)]
-            public static bool PreParsePlayerSentence(ref Terminal __instance, ref TerminalNode __result)
+            [HarmonyPatch("QuitTerminal")]
+            [HarmonyPostfix]
+            [HarmonyPriority(-2147483648)]
+            public static void PostQuitTerminal(ref Terminal __instance)
             {
-                Variables.Variables.Terminal = __instance;
+                __instance.textAdded = 0;
+                inputIndex = 0;
 
-                string input = __instance.screenText.text.Substring(__instance.screenText.text.Length - __instance.textAdded);
-
-                commandHistory.Add(input);
-                while (commandHistory.Count > MaxCommandHistoryValue)
+                if (currentCommand != null)
                 {
-                    commandHistory.RemoveAt(0);
+                    currentCommand.QuitTerminal(__instance);
+                    currentCommand = null;
                 }
 
-                TerminalNode node = ScriptableObject.CreateInstance<TerminalNode>();
-                node.displayText = "";
-                node.clearPreviousText = true;
-                node.terminalEvent = "";
+                commandHistoryIndex = -1;
+            }
 
-                HandleCommand(__instance, input, ref node);
+            [HarmonyPatch("TextChanged")]
+            [HarmonyPrefix]
+            [HarmonyPriority(2147483647)]
+            public static bool PreTextChanged(ref Terminal __instance, ref string newText)
+            {
+                OnTextChanged();
 
-                __result = node;
                 return false;
             }
 
-            [HarmonyPatch("ParsePlayerSentence")]
+            [HarmonyPatch("OnSubmit")]
+            [HarmonyPrefix]
+            [HarmonyPriority(2147483647)]
+            public static bool PreOnSubmit(ref Terminal __instance)
+            {
+                if (__instance.currentNode != null && __instance.currentNode.acceptAnything)
+                {
+                    return true;
+                }
+
+                OnSubmit();
+
+                return currentCommand == null;
+            }
+
+            [HarmonyPatch("OnSubmit")]
             [HarmonyPostfix]
             [HarmonyPriority(-2147483648)]
-            public static void PostParsePlayerSentence(ref Terminal __instance, ref TerminalNode __result)
+            public static void PostOnSubmit()
             {
-                Variables.Variables.Terminal = __instance;
+                if (currentCommand != null && currentCommand.blockingLevel == BlockingLevel.None)
+                {
+                    currentCommand = null;
+                }
+            }
 
-                HandleCommandResult(__instance, __result);
+            [HarmonyPatch("LoadNewNode")]
+            [HarmonyPrefix]
+            [HarmonyPriority(2147483647)]
+            public static void PreLoadNewNode(ref TerminalNode node)
+            {
+                node.maxCharactersToType = 2147483647;
+
+                if (!node.clearPreviousText && !node.displayText.StartsWith("</noparse>"))
+                {
+                    previousNodeText = node.displayText;
+                    node.displayText = "</noparse>" + node.displayText;
+                    return;
+                }
+
+                if (node.displayText.StartsWith(">MOONS\n"))
+                {
+                    previousNodeText = node.displayText;
+                    node.displayText = HelpCommand.GenerateHelpPage();
+                    node.displayText = HandleDisplayText(node.displayText);
+                    return;
+                }
+
+                if (node.displayText.Contains("Halden Electronics Inc."))
+                {
+                    previousNodeText = node.displayText;
+                    node.displayText = HandleDisplayText(node.displayText.Replace("Halden Electronics Inc.", "lammas123").Replace("FORTUNE-9", "lammOS"));
+                    return;
+                }
+
+                int startupIndex = node.displayText.IndexOf("Welcome to the FORTUNE-9 OS");
+                if (startupIndex != -1)
+                {
+                    previousNodeText = node.displayText;
+                    node.displayText = HandleDisplayText(node.displayText.Substring(0, startupIndex) + NewTerminalStartupText);
+                    return;
+                }
+            }
+
+            [HarmonyPatch("LoadNewNode")]
+            [HarmonyPostfix]
+            [HarmonyPriority(-2147483648)]
+            public static void PostLoadNewNode(ref Terminal __instance, ref TerminalNode node)
+            {
+                SetTerminalText(__instance.screenText.text, 1, false);
+
+                if (previousNodeText != "")
+                {
+                    node.displayText = previousNodeText;
+                    previousNodeText = "";
+                }
+
+                SetBodyHelmetCameraVisibility();
             }
 
             [HarmonyPatch("BuyItemsServerRpc")]
@@ -76,8 +133,6 @@ namespace lammOS.Patches
             [HarmonyPriority(2147483647)]
             public static bool PreBuyItemsServerRpc(ref Terminal __instance, ref int[] boughtItems, ref int newGroupCredits, ref int numItemsInShip)
             {
-                Variables.Variables.Terminal = __instance;
-
                 if (!__instance.IsHost)
                 {
                     return true;
@@ -93,11 +148,11 @@ namespace lammOS.Patches
                 int cost = 0;
                 foreach (int itemIndex in boughtItems)
                 {
-                    foreach (string itemId in purchasableItems.Keys)
+                    foreach (string itemId in Variables.Variables.purchasableItems.Keys)
                     {
-                        if (purchasableItems[itemId].index == itemIndex)
+                        if (Variables.Variables.purchasableItems[itemId].index == itemIndex)
                         {
-                            cost += GetItemCost(itemId, true);
+                            cost += Variables.Variables.GetItemCost(itemId, true);
                         }
                     }
                 }
@@ -117,140 +172,22 @@ namespace lammOS.Patches
 
                 return true;
             }
-
-            [HarmonyPatch("LoadNewNode")]
-            [HarmonyPrefix]
-            [HarmonyPriority(2147483647)]
-            public static void PreLoadNewNode(ref Terminal __instance, ref TerminalNode node)
-            {
-                Variables.Variables.Terminal = __instance;
-
-                if (node.displayText.StartsWith("Welcome to the FORTUNE-9 OS"))
-                {
-                    startupNodeText = node.displayText;
-                    node.displayText = newText;
-                    node.maxCharactersToType = 99999;
-                    currentLoadedNode = "startup";
-                }
-                else if (node.displayText.StartsWith(">MOONS\n"))
-                {
-                    helpNodeText = node.displayText;
-                    node.displayText = newText;
-                    node.maxCharactersToType = 99999;
-                    currentLoadedNode = "help";
-                }
-            }
-
-            [HarmonyPatch("LoadNewNode")]
-            [HarmonyPostfix]
-            [HarmonyPriority(-2147483648)]
-            public static void PostLoadNewNode(ref Terminal __instance, ref TerminalNode node)
-            {
-                Variables.Variables.Terminal = __instance;
-
-                if (currentLoadedNode == "startup")
-                {
-                    node.displayText = startupNodeText;
-                    startupNodeText = "";
-                }
-                else if (currentLoadedNode == "help")
-                {
-                    node.displayText = helpNodeText;
-                    helpNodeText = "";
-                }
-
-                SetBodyHelmetCamera();
-            }
-
-            [HarmonyPatch("BeginUsingTerminal")]
-            [HarmonyPostfix]
-            [HarmonyPriority(-2147483648)]
-            public static void PostBeginUsingTerminal(ref Terminal __instance)
-            {
-                Variables.Variables.Terminal = __instance;
-                
-                currentCommand = null;
-                if (runningMacroCoroutine != null)
-                {
-                    StartOfRound.Instance.StopCoroutine(runningMacroCoroutine);
-                    runningMacroCoroutine = null;
-                    macroAppendingText = false;
-                }
-                commandHistoryIndex = -1;
-            }
-
-            [HarmonyPatch("QuitTerminal")]
-            [HarmonyPostfix]
-            [HarmonyPriority(-2147483648)]
-            public static void PostQuitTerminal(ref Terminal __instance)
-            {
-                Variables.Variables.Terminal = __instance;
-
-                currentCommand = null;
-                if (runningMacroCoroutine != null)
-                {
-                    StartOfRound.Instance.StopCoroutine(runningMacroCoroutine);
-                    runningMacroCoroutine = null;
-                    macroAppendingText = false;
-                }
-                commandHistoryIndex = -1;
-            }
-
-            [HarmonyPatch("TextChanged")]
-            [HarmonyPostfix]
-            [HarmonyPriority(-2147483648)]
-            public static void PostTextChanged(ref Terminal __instance, ref string newText)
-            {
-                Variables.Variables.Terminal = __instance;
-
-                if (commandHistoryIndex != -1 && commandHistory[commandHistoryIndex] != __instance.screenText.text.Substring(Math.Max(0, __instance.screenText.text.Length - __instance.textAdded)))
-                {
-                    commandHistoryIndex = -1;
-                }
-
-                if (runningMacroCoroutine != null && !macroAppendingText)
-                {
-                    StartOfRound.Instance.StopCoroutine(runningMacroCoroutine);
-                    runningMacroCoroutine = null;
-
-                    TerminalNode node = ScriptableObject.CreateInstance<TerminalNode>();
-                    node.displayText = "Macro execution interrupted by key press.\n\n>";
-                    node.clearPreviousText = true;
-                    node.terminalEvent = "";
-                    node.playSyncedClip = terminalSyncedSounds["error"];
-
-                    Variables.Variables.Terminal.LoadNewNode(node);
-                }
-            }
-
-            [HarmonyPatch("TextPostProcess")]
-            [HarmonyPrefix]
-            [HarmonyPriority(2147483647)]
-            public static bool PreTextPostProcess(ref Terminal __instance, ref string __result, string modifiedDisplayText)
-            {
-                Variables.Variables.Terminal = __instance;
-
-                if (DisableTextPostProcessMethod.Value)
-                {
-                    __result = modifiedDisplayText;
-                    return false;
-                }
-                return true;
-            }
         }
 
         [HarmonyPatch(typeof(StartOfRound))]
-        public static partial class StartOfRoundPatches
+        public static class StartOfRoundPatches
         {
-            #if DEBUG
             [HarmonyPatch("Start")]
             [HarmonyPostfix]
             [HarmonyPriority(-2147483648)]
             public static void PostStart()
             {
-                StartOfRound.Instance.shipIntroSpeechSFX = StartOfRound.Instance.disableSpeakerSFX;
+                if (DisableIntroSpeechValue)
+                {
+                    savedShipIntroSpeechSFX = StartOfRound.Instance.shipIntroSpeechSFX;
+                    StartOfRound.Instance.shipIntroSpeechSFX = StartOfRound.Instance.disableSpeakerSFX;
+                }
             }
-            #endif
 
             [HarmonyPatch("ChangeLevelServerRpc")]
             [HarmonyPrefix]
@@ -263,9 +200,9 @@ namespace lammOS.Patches
                 }
 
                 string moonId = null;
-                foreach (string m in moons.Keys)
+                foreach (string m in Variables.Variables.moons.Keys)
                 {
-                    if (moons[m].node.buyRerouteToMoon == levelID)
+                    if (Variables.Variables.moons[m].node.buyRerouteToMoon == levelID)
                     {
                         moonId = m;
                         break;
@@ -276,19 +213,19 @@ namespace lammOS.Patches
                     return true;
                 }
 
-                int cost = GetMoonCost(moonId);
-                if (Variables.Variables.Terminal.groupCredits - cost != newGroupCreditsAmount)
+                int cost = Variables.Variables.GetMoonCost(moonId);
+                if (NewTerminal.NewTerminal.Terminal.groupCredits - cost != newGroupCreditsAmount)
                 {
                     lammOS.Logger.LogWarning("Routing to moon was bought by a client for an incorrect price");
 
-                    if (Variables.Variables.Terminal.groupCredits - cost < 0)
+                    if (NewTerminal.NewTerminal.Terminal.groupCredits - cost < 0)
                     {
                         lammOS.Logger.LogWarning("Resulting credits of routing is negative, canceling purchase");
-                        Variables.Variables.Terminal.SyncGroupCreditsServerRpc(Variables.Variables.Terminal.groupCredits, Variables.Variables.Terminal.numberOfItemsInDropship);
+                        NewTerminal.NewTerminal.Terminal.SyncGroupCreditsServerRpc(NewTerminal.NewTerminal.Terminal.groupCredits, NewTerminal.NewTerminal.Terminal.numberOfItemsInDropship);
                         return false;
                     }
                     lammOS.Logger.LogWarning("Resulting credits of routing is positive, fix and sync credits but allow purchase");
-                    newGroupCreditsAmount = Mathf.Clamp(Variables.Variables.Terminal.groupCredits - cost, 0, 10000000);
+                    newGroupCreditsAmount = Mathf.Clamp(NewTerminal.NewTerminal.Terminal.groupCredits - cost, 0, 10000000);
                 }
 
                 return true;
@@ -305,9 +242,9 @@ namespace lammOS.Patches
                 }
 
                 string unlockableId = null;
-                foreach (string u in purchasableUnlockables.Keys)
+                foreach (string u in Variables.Variables.purchasableUnlockables.Keys)
                 {
-                    if (purchasableUnlockables[u].node.shipUnlockableID == unlockableID)
+                    if (Variables.Variables.purchasableUnlockables[u].node.shipUnlockableID == unlockableID)
                     {
                         unlockableId = u;
                         break;
@@ -318,18 +255,18 @@ namespace lammOS.Patches
                     return true;
                 }
 
-                int cost = GetUnlockableCost(unlockableId);
-                if (Variables.Variables.Terminal.groupCredits - cost != newGroupCreditsAmount)
+                int cost = Variables.Variables.GetUnlockableCost(unlockableId);
+                if (NewTerminal.NewTerminal.Terminal.groupCredits - cost != newGroupCreditsAmount)
                 {
                     lammOS.Logger.LogWarning("Unlockable bought by a client for an incorrect price");
-                    if (Variables.Variables.Terminal.groupCredits - cost < 0)
+                    if (NewTerminal.NewTerminal.Terminal.groupCredits - cost < 0)
                     {
                         lammOS.Logger.LogWarning("Resulting credits of purchase is negative, canceling purchase");
-                        Variables.Variables.Terminal.SyncGroupCreditsServerRpc(Variables.Variables.Terminal.groupCredits, Variables.Variables.Terminal.numberOfItemsInDropship);
+                        NewTerminal.NewTerminal.Terminal.SyncGroupCreditsServerRpc(NewTerminal.NewTerminal.Terminal.groupCredits, NewTerminal.NewTerminal.Terminal.numberOfItemsInDropship);
                         return false;
                     }
                     lammOS.Logger.LogWarning("Resulting credits of purchase is positive, fix and sync credits but allow purchase");
-                    newGroupCreditsAmount = Mathf.Clamp(Variables.Variables.Terminal.groupCredits - cost, 0, 10000000);
+                    newGroupCreditsAmount = Mathf.Clamp(NewTerminal.NewTerminal.Terminal.groupCredits - cost, 0, 10000000);
                 }
 
                 return true;

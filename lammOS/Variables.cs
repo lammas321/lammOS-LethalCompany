@@ -7,7 +7,7 @@ namespace lammOS.Variables
 {
     public static class Variables
     {
-        public static Dictionary<string, TerminalKeyword> terminalKeywords;
+        public static Dictionary<string, TerminalKeyword> terminalKeywords = new();
         public static Dictionary<string, int> terminalSyncedSounds = new()
         {
             { "buy", 0 },
@@ -62,13 +62,13 @@ namespace lammOS.Variables
             public int index;
             public Item item;
             public string name;
-            public int salePercentage => Terminal.itemSalesPercentages[index];
+            public int salePercentage => NewTerminal.NewTerminal.Terminal.itemSalesPercentages[index];
             public string shortestChars;
 
             public PurchasableItem(int index)
             {
                 this.index = index;
-                item = Terminal.buyableItemsList[index];
+                item = NewTerminal.NewTerminal.Terminal.buyableItemsList[index];
             }
         }
         public class PurchasableUnlockable
@@ -112,8 +112,6 @@ namespace lammOS.Variables
             }
         }
 
-        public static Terminal Terminal { get; internal set; }
-
         internal static void LoadConfigValues()
         {
             if (File.Exists(Config.ConfigFilePath))
@@ -138,7 +136,7 @@ namespace lammOS.Variables
             ShowMinimumChars = Config.Bind("General", "ShowMinimumChars", false, "If the minimum characters required for the terminal to autocomplete an argument should be shown. For example: 'p' when buying a pro flashlight, or 'te' for the teleporter, while 'telev' is the minimum for the television. Having this on all the time doesn't look the greatest, but it helps when learning typing shortcuts.");
             ShowMinimumCharsValue = ShowMinimumChars.Value;
 
-            ListPaddingChar = Config.Bind("General", "ListPaddingChar", ".", "The character that should be used when adding padding to lists. If you want to use a space, the config parser will trim it out, but I will check if the config is empty and replace it with a string.");
+            ListPaddingChar = Config.Bind("General", "ListPaddingChar", ".", "The character that should be used when adding padding to lists. If you want to use a space, the config parser will trim it out, but I will check if the config is empty and replace it with a space.");
             if (ListPaddingChar.Value == "")
             {
                 ListPaddingChar.Value = " ";
@@ -170,15 +168,39 @@ namespace lammOS.Variables
             ShowTerminalClock = Config.Bind("General", "ShowTerminalClock", true, "If the terminal clock should be shown in the top right corner or not.");
             ShowTerminalClockValue = ShowTerminalClock.Value;
 
-            DisableTextPostProcessMethod = Config.Bind("General", "DisableTextPostProcessMethod", true, "If the terminal's TextPostProcess method should be disabled. lammOS does not use this method so it is disabled by default to make running commands a bit faster, but this option is here in case any other mods utilize it.");
-            DisableTextPostProcessMethodValue = DisableTextPostProcessMethod.Value;
+            DisableIntroSpeech = Config.Bind("General", "DisableIntroSpeech", false, "If the intro speech should be disabled.");
+            DisableIntroSpeechValue = DisableIntroSpeech.Value;
+            if (StartOfRound.Instance != null)
+            {
+                if (DisableIntroSpeechValue && savedShipIntroSpeechSFX == null)
+                {
+                    savedShipIntroSpeechSFX = StartOfRound.Instance.shipIntroSpeechSFX;
+                    StartOfRound.Instance.shipIntroSpeechSFX = StartOfRound.Instance.disableSpeakerSFX;
+                }
+                else if (!DisableIntroSpeechValue && savedShipIntroSpeechSFX != null)
+                {
+                    StartOfRound.Instance.shipIntroSpeechSFX = savedShipIntroSpeechSFX;
+                    savedShipIntroSpeechSFX = null;
+                }
+            }
 
             Config.Save();
         }
+
         internal static void LoadKeywords()
         {
-            terminalKeywords = new();
-            foreach (TerminalKeyword terminalKeyword in Terminal.terminalNodes.allKeywords)
+            if (terminalKeywords.Count != 0)
+            {
+                foreach (TerminalKeyword terminalKeyword in NewTerminal.NewTerminal.Terminal.terminalNodes.allKeywords)
+                {
+                    if (terminalKeywords.ContainsKey(terminalKeyword.word))
+                    {
+                        terminalKeywords.Remove(terminalKeyword.word);
+                    }
+                }
+            }
+
+            foreach (TerminalKeyword terminalKeyword in NewTerminal.NewTerminal.Terminal.terminalNodes.allKeywords)
             {
                 if (terminalKeywords.ContainsKey(terminalKeyword.word))
                 {
@@ -290,9 +312,9 @@ namespace lammOS.Variables
         internal static void LoadPurchasables()
         {
             purchasableItems = new();
-            for (int i = 0; i < Terminal.buyableItemsList.Length; i++)
+            for (int i = 0; i < NewTerminal.NewTerminal.Terminal.buyableItemsList.Length; i++)
             {
-                purchasableItems.Add(Terminal.buyableItemsList[i].itemName.ToLower(), new PurchasableItem(i));
+                purchasableItems.Add(NewTerminal.NewTerminal.Terminal.buyableItemsList[i].itemName.ToLower(), new PurchasableItem(i));
             }
 
             foreach (string itemId in purchasableItems.Keys)
@@ -439,7 +461,7 @@ namespace lammOS.Variables
         {
             int entityIndex = 0;
             entities = new();
-            entriesWithoutEntity = new(Terminal.enemyFiles);
+            entriesWithoutEntity = new(NewTerminal.NewTerminal.Terminal.enemyFiles);
             while (entityIndex < entitiesWithoutEntry.Count)
             {
                 EnemyType entity = entitiesWithoutEntry[entityIndex];
@@ -447,97 +469,97 @@ namespace lammOS.Variables
                 {
                     case "Centipede":
                         {
-                            AddEntity(entity, Terminal.enemyFiles[0], entityIndex);
+                            AddEntity(entity, NewTerminal.NewTerminal.Terminal.enemyFiles[0], entityIndex);
                             break;
                         }
                     case "Flowerman":
                         {
-                            AddEntity(entity, Terminal.enemyFiles[1], entityIndex);
+                            AddEntity(entity, NewTerminal.NewTerminal.Terminal.enemyFiles[1], entityIndex);
                             break;
                         }
                     case "Crawler":
                         {
-                            AddEntity(entity, Terminal.enemyFiles[2], entityIndex);
+                            AddEntity(entity, NewTerminal.NewTerminal.Terminal.enemyFiles[2], entityIndex);
                             break;
                         }
                     case "MouthDog":
                         {
-                            AddEntity(entity, Terminal.enemyFiles[3], entityIndex);
+                            AddEntity(entity, NewTerminal.NewTerminal.Terminal.enemyFiles[3], entityIndex);
                             break;
                         }
                     case "Hoarding bug":
                         {
-                            AddEntity(entity, Terminal.enemyFiles[4], entityIndex);
+                            AddEntity(entity, NewTerminal.NewTerminal.Terminal.enemyFiles[4], entityIndex);
                             break;
                         }
                     case "Blob":
                         {
-                            AddEntity(entity, Terminal.enemyFiles[5], entityIndex);
+                            AddEntity(entity, NewTerminal.NewTerminal.Terminal.enemyFiles[5], entityIndex);
                             break;
                         }
                     case "ForestGiant":
                         {
-                            AddEntity(entity, Terminal.enemyFiles[6], entityIndex);
+                            AddEntity(entity, NewTerminal.NewTerminal.Terminal.enemyFiles[6], entityIndex);
                             break;
                         }
                     case "Spring":
                         {
-                            AddEntity(entity, Terminal.enemyFiles[7], entityIndex);
+                            AddEntity(entity, NewTerminal.NewTerminal.Terminal.enemyFiles[7], entityIndex);
                             break;
                         }
                     case "Lasso":
                         {
-                            AddEntity(entity, Terminal.enemyFiles[8], entityIndex);
+                            AddEntity(entity, NewTerminal.NewTerminal.Terminal.enemyFiles[8], entityIndex);
                             break;
                         }
                     case "Earth Leviathan":
                         {
-                            AddEntity(entity, Terminal.enemyFiles[9], entityIndex);
+                            AddEntity(entity, NewTerminal.NewTerminal.Terminal.enemyFiles[9], entityIndex);
                             break;
                         }
                     case "Jester":
                         {
-                            AddEntity(entity, Terminal.enemyFiles[10], entityIndex);
+                            AddEntity(entity, NewTerminal.NewTerminal.Terminal.enemyFiles[10], entityIndex);
                             break;
                         }
                     case "Puffer":
                         {
-                            AddEntity(entity, Terminal.enemyFiles[11], entityIndex);
+                            AddEntity(entity, NewTerminal.NewTerminal.Terminal.enemyFiles[11], entityIndex);
                             break;
                         }
                     case "Bunker Spider":
                         {
-                            AddEntity(entity, Terminal.enemyFiles[12], entityIndex);
+                            AddEntity(entity, NewTerminal.NewTerminal.Terminal.enemyFiles[12], entityIndex);
                             break;
                         }
                     case "Manticoil":
                         {
-                            AddEntity(entity, Terminal.enemyFiles[13], entityIndex);
+                            AddEntity(entity, NewTerminal.NewTerminal.Terminal.enemyFiles[13], entityIndex);
                             break;
                         }
                     case "Red Locust Bees":
                         {
-                            AddEntity(entity, Terminal.enemyFiles[14], entityIndex);
+                            AddEntity(entity, NewTerminal.NewTerminal.Terminal.enemyFiles[14], entityIndex);
                             break;
                         }
                     case "Docile Locust Bees":
                         {
-                            AddEntity(entity, Terminal.enemyFiles[15], entityIndex);
+                            AddEntity(entity, NewTerminal.NewTerminal.Terminal.enemyFiles[15], entityIndex);
                             break;
                         }
                     case "Baboon hawk":
                         {
-                            AddEntity(entity, Terminal.enemyFiles[16], entityIndex);
+                            AddEntity(entity, NewTerminal.NewTerminal.Terminal.enemyFiles[16], entityIndex);
                             break;
                         }
                     case "Nutcracker":
                         {
-                            AddEntity(entity, Terminal.enemyFiles[17], entityIndex);
+                            AddEntity(entity, NewTerminal.NewTerminal.Terminal.enemyFiles[17], entityIndex);
                             break;
                         }
                     case "Girl":
                         {
-                            AddEntity(entity, null, entityIndex, "Ghost Girl");
+                            AddEntity(entity, null, entityIndex, "Ghost girls");
                             break;
                         }
                     case "Masked":
@@ -565,6 +587,21 @@ namespace lammOS.Variables
                         }
                 }
             }
+        }
+        internal static void PostLoadingEntities()
+        {
+            foreach (EnemyType entity in entitiesWithoutEntry)
+            {
+                lammOS.Logger.LogWarning("The entity '" + entity.enemyName + "' could not successfully be matched to a bestiary entry.");
+            }
+            entitiesWithoutEntry.Clear();
+
+            foreach (TerminalNode entry in entriesWithoutEntity)
+            {
+                lammOS.Logger.LogWarning("The bestiary entry '" + entry.creatureName + "' could not successfully be matched to an entity. Adding as a standalone bestiary entry.");
+                entities.Add(entry.creatureName, new Entity(null, entry, entry.creatureName));
+            }
+            entriesWithoutEntity.Clear();
 
             foreach (Entity entity in entities.Values)
             {
@@ -598,24 +635,12 @@ namespace lammOS.Variables
                 }
             }
         }
-        internal static void PostLoadingEntities()
-        {
-            foreach (EnemyType entity in entitiesWithoutEntry)
-            {
-                lammOS.Logger.LogWarning("The entity '" + entity.enemyName + "' could not successfully be loaded.");
-            }
-
-            foreach (TerminalNode node in entriesWithoutEntity)
-            {
-                lammOS.Logger.LogWarning("The bestiary entry for '" + node.creatureName + "' could not be matched to an entity.");
-            }
-        }
         internal static void LoadLogs()
         {
             logs = new();
-            for (int i = 0; i < Terminal.logEntryFiles.Count; i++)
+            for (int i = 0; i < NewTerminal.NewTerminal.Terminal.logEntryFiles.Count; i++)
             {
-                logs.Add(Terminal.logEntryFiles[i].creatureName.ToLower(), new Log(Terminal.logEntryFiles[i]));
+                logs.Add(NewTerminal.NewTerminal.Terminal.logEntryFiles[i].creatureName.ToLower(), new Log(NewTerminal.NewTerminal.Terminal.logEntryFiles[i]));
             }
 
             foreach (string logId in logs.Keys)
@@ -650,15 +675,90 @@ namespace lammOS.Variables
                 }
             }
         }
+        
+        internal static void RemoveVanillaKeywords()
+        {
+            List<TerminalKeyword> keywords = new();
+            foreach (TerminalKeyword keyword in NewTerminal.NewTerminal.Terminal.terminalNodes.allKeywords)
+            {
+                if (keyword.accessTerminalObjects)
+                {
+                    continue;
+                }
+
+                if (keyword.word == "buy" || keyword.word == "money" || keyword.word == "help" || keyword.word == "store" || keyword.word == "bestiary" || keyword.word == "reset credits" || keyword.word == "inside cam" || keyword.word == "moons" || keyword.word == "route" || keyword.word == "decor" || keyword.word == "upgrades" || keyword.word == "sigurd" || keyword.word == "storage" || keyword.word == "other" || keyword.word == "scan" || keyword.word == "monitor" || keyword.word == "switch" || keyword.word == "eject")
+                {
+                    continue;
+                }
+
+                if (keyword.defaultVerb != null)
+                {
+                    if (keyword.defaultVerb.word == "buy" || keyword.defaultVerb.word == "route")
+                    {
+                        continue;
+                    }
+
+                    if (keyword.defaultVerb.word == "info")
+                    {
+                        bool remove = false;
+                        foreach (CompatibleNoun cn in terminalKeywords["info"].compatibleNouns)
+                        {
+                            if (cn == null || cn.noun == null || cn.result == null)
+                            {
+                                continue;
+                            }
+
+                            if (cn.noun.word == keyword.word && cn.result.creatureFileID != -1)
+                            {
+                                remove = true;
+                                break;
+                            }
+                        }
+
+                        if (remove)
+                        {
+                            continue;
+                        }
+                    }
+
+                    if (keyword.defaultVerb.word == "view")
+                    {
+                        bool remove = false;
+                        foreach (CompatibleNoun cn in terminalKeywords["view"].compatibleNouns)
+                        {
+                            if (cn == null || cn.noun == null || cn.result == null)
+                            {
+                                continue;
+                            }
+
+                            if (cn.noun.word == keyword.word && cn.result.storyLogFileID != -1)
+                            {
+                                remove = true;
+                                break;
+                            }
+                        }
+
+                        if (remove)
+                        {
+                            continue;
+                        }
+                    }
+                }
+
+                keywords.Add(keyword);
+            }
+
+            NewTerminal.NewTerminal.Terminal.terminalNodes.allKeywords = keywords.ToArray();
+        }
 
         public static readonly int DefaultMaxDropshipItems = 12;
-        public static readonly int DefaultMacroInstructionsPerSecond = 5;
+        public static readonly float DefaultMacroInstructionsPerSecond = 5f;
 
         public static int GetMaxDropshipItems()
         {
             return SyncedConfig.SyncedConfig.Instance.MaxDropshipItemsValue;
         }
-        public static int GetMacroInstructionsPerSecond()
+        public static float GetMacroInstructionsPerSecond()
         {
             return SyncedConfig.SyncedConfig.Instance.MacroInstructionsPerSecondValue;
         }
