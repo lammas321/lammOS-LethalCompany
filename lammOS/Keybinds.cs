@@ -1,16 +1,12 @@
 ﻿using GameNetcodeStuff;
 using LethalCompanyInputUtils.Api;
-using System.Collections.Generic;
 using UnityEngine.InputSystem;
+using static lammOS.NewTerminal.NewTerminal;
 
 namespace lammOS.Keybinds
 {
     internal class Keybinds : LcInputActions
     {
-        internal static List<string> commandHistory = new();
-        internal static int commandHistoryIndex = -1;
-        internal static string lastTypedCommand = "";
-
         [InputAction("<Keyboard>/leftArrow", Name = "Previous Radar Target")]
         internal InputAction PreviousRadarTargetKey { get; set; }
         [InputAction("<Keyboard>/rightArrow", Name = "Next Radar Target")]
@@ -97,12 +93,12 @@ namespace lammOS.Keybinds
 
             if (commandHistoryIndex == -1)
             {
-                lastTypedCommand = Variables.Variables.Terminal.screenText.text.Substring(Variables.Variables.Terminal.screenText.text.Length - Variables.Variables.Terminal.textAdded);
+                lastTypedCommand = NewTerminal.NewTerminal.Terminal.screenText.text.Substring(NewTerminal.NewTerminal.Terminal.screenText.text.Length - NewTerminal.NewTerminal.Terminal.textAdded);
                 commandHistoryIndex = commandHistory.Count;
             }
 
             commandHistoryIndex--;
-            Variables.Variables.Terminal.screenText.text = Variables.Variables.Terminal.screenText.text.Substring(0, Variables.Variables.Terminal.screenText.text.Length - Variables.Variables.Terminal.textAdded) + commandHistory[commandHistoryIndex];
+            NewTerminal.NewTerminal.Terminal.screenText.text = NewTerminal.NewTerminal.Terminal.screenText.text.Substring(0, NewTerminal.NewTerminal.Terminal.screenText.text.Length - NewTerminal.NewTerminal.Terminal.textAdded) + commandHistory[commandHistoryIndex];
         }
         internal static void OnNextCommandHistoryKeyPressed(InputAction.CallbackContext context)
         {
@@ -119,11 +115,11 @@ namespace lammOS.Keybinds
             if (commandHistoryIndex == commandHistory.Count)
             {
                 commandHistoryIndex = -1;
-                Variables.Variables.Terminal.screenText.text = Variables.Variables.Terminal.screenText.text.Substring(0, Variables.Variables.Terminal.screenText.text.Length - Variables.Variables.Terminal.textAdded) + lastTypedCommand;
+                NewTerminal.NewTerminal.Terminal.screenText.text = NewTerminal.NewTerminal.Terminal.screenText.text.Substring(0, NewTerminal.NewTerminal.Terminal.screenText.text.Length - NewTerminal.NewTerminal.Terminal.textAdded) + lastTypedCommand;
                 return;
             }
 
-            Variables.Variables.Terminal.screenText.text = Variables.Variables.Terminal.screenText.text.Substring(0, Variables.Variables.Terminal.screenText.text.Length - Variables.Variables.Terminal.textAdded) + commandHistory[commandHistoryIndex];
+            NewTerminal.NewTerminal.Terminal.screenText.text = NewTerminal.NewTerminal.Terminal.screenText.text.Substring(0, NewTerminal.NewTerminal.Terminal.screenText.text.Length - NewTerminal.NewTerminal.Terminal.textAdded) + commandHistory[commandHistoryIndex];
         }
     }
 }

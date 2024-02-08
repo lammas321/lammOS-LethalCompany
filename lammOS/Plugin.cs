@@ -10,10 +10,13 @@ using static lammOS.Commands.Commands;
 using static lammOS.SyncedConfig.SyncedConfig;
 using static lammOS.Variables.Variables;
 
+// Terminal text color: #03e715 (3, 231, 21) (0.012, 0.906, 0.082)
+// Terminal text size: 15.6
+
 namespace lammOS
 {
-    [BepInPlugin("lammas123.lammOS", "lammOS", "1.3.1")]
-    [BepInDependency("com.rune580.LethalCompanyInputUtils", MinimumDependencyVersion: "0.6.1")]
+    [BepInPlugin("lammas123.lammOS", "lammOS", "1.4.0")]
+    [BepInDependency("com.rune580.LethalCompanyInputUtils", MinimumDependencyVersion: "0.6.3")]
     public class lammOS : BaseUnityPlugin
     {
         internal static lammOS Instance;
@@ -34,27 +37,29 @@ namespace lammOS
         public static int MaxCommandHistoryValue { get; internal set; }
         internal static ConfigEntry<bool> ShowTerminalClock;
         public static bool ShowTerminalClockValue { get; internal set; }
-        internal static ConfigEntry<bool> DisableTextPostProcessMethod;
-        public static bool DisableTextPostProcessMethodValue { get; internal set; }
+        internal static ConfigEntry<bool> DisableIntroSpeech;
+        public static bool DisableIntroSpeechValue { get; internal set; }
+
+        internal static AudioClip savedShipIntroSpeechSFX;
 
         internal static RawImage bodyHelmetCameraImage = null;
         public static bool hasBodyHelmetCameraMod { get; internal set; } = true;
         internal static void SetupBodyHelmetCamera(Texture texture)
         {
-            bodyHelmetCameraImage = Instantiate(Variables.Variables.Terminal.terminalImage, Variables.Variables.Terminal.terminalImage.transform.parent);
+            bodyHelmetCameraImage = Instantiate(NewTerminal.NewTerminal.Terminal.terminalImage, NewTerminal.NewTerminal.Terminal.terminalImage.transform.parent);
             bodyHelmetCameraImage.texture = texture;
 
-            Variables.Variables.Terminal.terminalImage.transform.localScale = new Vector3(0.5f, 0.5f, 1f);
-            Variables.Variables.Terminal.terminalImage.transform.localPosition = new Vector3(Variables.Variables.Terminal.terminalImage.transform.localPosition.x + 100, Variables.Variables.Terminal.terminalImage.transform.localPosition.y + 75, Variables.Variables.Terminal.terminalImage.transform.localPosition.z);
+            NewTerminal.NewTerminal.Terminal.terminalImage.transform.localScale = new Vector3(0.5f, 0.5f, 1f);
+            NewTerminal.NewTerminal.Terminal.terminalImage.transform.localPosition = new Vector3(NewTerminal.NewTerminal.Terminal.terminalImage.transform.localPosition.x + 100, NewTerminal.NewTerminal.Terminal.terminalImage.transform.localPosition.y + 75, NewTerminal.NewTerminal.Terminal.terminalImage.transform.localPosition.z);
 
             bodyHelmetCameraImage.transform.localScale = new Vector3(0.5f, 0.5f, 1f);
             bodyHelmetCameraImage.transform.localPosition = new Vector3(bodyHelmetCameraImage.transform.localPosition.x + 100, bodyHelmetCameraImage.transform.localPosition.y - 75, bodyHelmetCameraImage.transform.localPosition.z);
         }
-        internal static void SetBodyHelmetCamera()
+        internal static void SetBodyHelmetCameraVisibility()
         {
             if (bodyHelmetCameraImage != null)
             {
-                bodyHelmetCameraImage.enabled = Variables.Variables.Terminal.terminalImage.enabled;
+                bodyHelmetCameraImage.enabled = NewTerminal.NewTerminal.Terminal.terminalImage.enabled;
                 return;
             }
             if (!hasBodyHelmetCameraMod)
@@ -62,41 +67,67 @@ namespace lammOS
                 return;
             }
 
-            if (BepInEx.Bootstrap.Chainloader.PluginInfos.ContainsKey("RickArg.lethalcompany.helmetcameras"))
+            if (BepInEx.Bootstrap.Chainloader.PluginInfos.ContainsKey("ShaosilGaming.GeneralImprovements") && GameObject.Find("Environment/HangarShip/ShipModels2b/MonitorWall/MonitorGroup(Clone)") != null)
             {
-                GameObject ricksHelmetCameraObject = GameObject.Find("HelmetCamera");
-                if (ricksHelmetCameraObject == null)
+                if (BepInEx.Bootstrap.Chainloader.PluginInfos.ContainsKey("RickArg.lethalcompany.helmetcameras"))
                 {
-                    return;
+                    Logger.LogWarning("Unable to use RickArg's HelmetCameras with GeneralImprovements by ShaosilGaming enabled.");
                 }
-
-                Camera ricksHelmetCamera = ricksHelmetCameraObject.GetComponent<Camera>();
-                if (ricksHelmetCamera == null)
+                else if (BepInEx.Bootstrap.Chainloader.PluginInfos.ContainsKey("Zaggy1024.OpenBodyCams"))
                 {
-                    return;
+                    Material material = GameObject.Find("Environment/HangarShip/ShipModels2b/MonitorWall/MonitorGroup(Clone)/Monitors/BigRight/RScreen").GetComponent<MeshRenderer>().material;
+                    if (material.name == "BodyCamMaterial (Instance)")
+                    {
+                        SetupBodyHelmetCamera(material.mainTexture);
+                    }
+                    else
+                    {
+                        Logger.LogWarning("Unable to use Zaggy1024's OpenBodyCams with GeneralImprovements by ShaosilGaming if it's not on the bottom right monitor.");
+                    }
                 }
-
-                SetupBodyHelmetCamera(ricksHelmetCamera.targetTexture);
+                else if (BepInEx.Bootstrap.Chainloader.PluginInfos.ContainsKey("SolosBodycams"))
+                {
+                    Logger.LogWarning("Unable to use Solo's BodyCams with GeneralImprovements by ShaosilGaming enabled.");
+                }
             }
-            else if (BepInEx.Bootstrap.Chainloader.PluginInfos.ContainsKey("Zaggy1024.OpenBodyCams") || BepInEx.Bootstrap.Chainloader.PluginInfos.ContainsKey("SolosBodycams"))
+            else
             {
-                SetupBodyHelmetCamera(GameObject.Find("Environment/HangarShip/ShipModels2b/MonitorWall/Cube.001").GetComponent<MeshRenderer>().materials[2].mainTexture);
+                if (BepInEx.Bootstrap.Chainloader.PluginInfos.ContainsKey("RickArg.lethalcompany.helmetcameras"))
+                {
+                    GameObject ricksHelmetCameraObject = GameObject.Find("HelmetCamera");
+                    if (ricksHelmetCameraObject == null)
+                    {
+                        return;
+                    }
+
+                    Camera ricksHelmetCamera = ricksHelmetCameraObject.GetComponent<Camera>();
+                    if (ricksHelmetCamera == null)
+                    {
+                        return;
+                    }
+
+                    SetupBodyHelmetCamera(ricksHelmetCamera.targetTexture);
+                }
+                else if (BepInEx.Bootstrap.Chainloader.PluginInfos.ContainsKey("Zaggy1024.OpenBodyCams") || BepInEx.Bootstrap.Chainloader.PluginInfos.ContainsKey("SolosBodycams"))
+                {
+                    SetupBodyHelmetCamera(GameObject.Find("Environment/HangarShip/ShipModels2b/MonitorWall/Cube.001").GetComponent<MeshRenderer>().materials[2].mainTexture);
+                }
             }
 
             if (bodyHelmetCameraImage != null)
             {
-                bodyHelmetCameraImage.enabled = Variables.Variables.Terminal.terminalImage.enabled;
+                bodyHelmetCameraImage.enabled = NewTerminal.NewTerminal.Terminal.terminalImage.enabled;
                 return;
             }
 
             hasBodyHelmetCameraMod = false;
         }
-
+        
         internal static GameObject Clock;
         internal static TextMeshProUGUI ClockText => Clock.GetComponent<TextMeshProUGUI>();
         internal static void SetupClock()
         {
-            Transform terminalMainContainer = Variables.Variables.Terminal.transform.parent.parent.Find("Canvas").Find("MainContainer");
+            Transform terminalMainContainer = NewTerminal.NewTerminal.Terminal.transform.parent.parent.Find("Canvas").Find("MainContainer");
             try
             {
                 Clock = terminalMainContainer.Find("Clock").gameObject;
@@ -113,36 +144,6 @@ namespace lammOS
             }
         }
 
-        public static bool hasSetup { get; internal set; } = false;
-        public static readonly string newText = "Powered by lammOS     Created by lammas123\n          Courtesy of the Company\n\nType HELP for a list of available commands.\n\n>";
-        internal static void AddCodeCommands()
-        {
-            foreach (TerminalKeyword keyword in terminalKeywords.Values)
-            {
-                if (keyword.word.Length == 2)
-                {
-                    AddCommand(new CodeCommand(keyword.word));
-                }
-            }
-        }
-        internal static void AddCompatibilityCommands()
-        {
-            if (BepInEx.Bootstrap.Chainloader.PluginInfos.ContainsKey("com.malco.lethalcompany.moreshipupgrades"))
-            {
-                Logger.LogInfo("Adding Lategame Upgrades compatibility commands");
-                AddCommand(new DummyCommand("Lategame Upgrades", "lategame", "Displays information related to the Lategame Upgrades mod."));
-                AddCommand(new DummyCommand("Lategame Upgrades", "lgu", "Displays the purchasable upgrades from the Lategame Upgrades store."));
-            }
-        }
-        internal static void ReplaceDefaultSetupScreen()
-        {
-            TerminalNode node = Variables.Variables.Terminal.terminalNodes.specialNodes[0];
-            node.displayText = node.displayText.Replace("Halden Electronics Inc.", "lammas123").Replace("FORTUNE-9", "lammOS");
-
-            TerminalNode resultNode = node.terminalOptions[0].result.terminalOptions[0].result;
-            resultNode.displayText = resultNode.displayText.Substring(0, resultNode.displayText.IndexOf("Welcome to the FORTUNE-9 OS")) + newText;
-        }
-
         public static void Load()
         {
             LoadConfigValues();
@@ -153,6 +154,8 @@ namespace lammOS
             LoadEntities();
             PostLoadingEntities();
             LoadLogs();
+
+            RemoveVanillaKeywords();
 
             LoadSyncedConfigValues();
             Macros.Macros.Load();
@@ -169,7 +172,6 @@ namespace lammOS
                 hasSetup = true;
                 AddCodeCommands();
                 AddCompatibilityCommands();
-                ReplaceDefaultSetupScreen();
             }
 
             SetupSyncedConfig();

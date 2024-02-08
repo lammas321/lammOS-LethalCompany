@@ -19,7 +19,7 @@ namespace lammOS.SyncedConfig
         internal string ModVersion = BepInEx.Bootstrap.Chainloader.PluginInfos["lammas123.lammOS"].Metadata.Version.ToString();
 
         internal int MaxDropshipItemsValue = DefaultMaxDropshipItems;
-        internal int MacroInstructionsPerSecondValue = DefaultMacroInstructionsPerSecond;
+        internal float MacroInstructionsPerSecondValue = DefaultMacroInstructionsPerSecond;
 
         internal Dictionary<string, bool> EnabledCommands;
 
@@ -55,10 +55,10 @@ namespace lammOS.SyncedConfig
                     Instance.MaxDropshipItemsValue = 1;
                 }
 
-                Instance.MacroInstructionsPerSecondValue = Config.Bind("Synced", "MacroInstructionsPerSecond", DefaultMacroInstructionsPerSecond, "The number of macro instructions that can be ran per second, ranging from 1 to 100.").Value;
-                if (Instance.MacroInstructionsPerSecondValue < 1)
+                Instance.MacroInstructionsPerSecondValue = Config.Bind("Synced", "MacroInstructionsPerSecond", DefaultMacroInstructionsPerSecond, "The number of macro instructions that can be ran per second, ranging from just above 0 to 100.").Value;
+                if (Instance.MacroInstructionsPerSecondValue <= 0)
                 {
-                    Instance.MacroInstructionsPerSecondValue = 1;
+                    Instance.MacroInstructionsPerSecondValue = 0.001f;
                 }
                 else if (Instance.MacroInstructionsPerSecondValue > 100)
                 {
@@ -69,6 +69,10 @@ namespace lammOS.SyncedConfig
                 bool giveDescription = true;
                 foreach (Command command in GetCommands())
                 {
+                    if (command is AlphanumericCodeCommand || command is CompatibilityCommand)
+                    {
+                        continue;
+                    }
                     ConfigEntry<bool> enabled;
                     if (giveDescription)
                     {
@@ -204,7 +208,7 @@ namespace lammOS.SyncedConfig
             byte[] data = new byte[val];
             reader.ReadBytesSafe(ref data, val);
 
-            SyncWithHost(DeserializeFromBytes(data));
+            SyncWithHost(DeserializeFromBytes<SyncedConfig>(data));
         }
         internal static void SyncWithHost(SyncedConfig newConfig)
         {
@@ -212,31 +216,21 @@ namespace lammOS.SyncedConfig
             {
                 Logger.LogWarning("The host is using a different version of the mod than you are, this may lead to certain synced options not syncing properly if the synced config was changed between versions! Your version: " + Instance.ModVersion + "   Host's version: " + newConfig.ModVersion);
 
-                BinaryFormatter bf = new();
-                using MemoryStream stream = new();
 
+                byte[] array = SerializeToBytes(Instance.ModVersion);
+                int value = array.Length;
+
+                FastBufferWriter stream = new(array.Length + 4, Allocator.Temp);
                 try
                 {
-                    bf.Serialize(stream, Instance.ModVersion);
-                    byte[] array = stream.ToArray();
-                    int value = array.Length;
+                    stream.WriteValueSafe(in value, default);
+                    stream.WriteBytesSafe(array);
 
-                    FastBufferWriter streamWriter = new(array.Length + 4, Allocator.Temp);
-                    try
-                    {
-                        streamWriter.WriteValueSafe(in value, default);
-                        streamWriter.WriteBytesSafe(array);
-
-                        NetworkManager.Singleton.CustomMessagingManager.SendNamedMessage("lammOS_OnNotifyVersionMismatch", 0ul, streamWriter);
-                    }
-                    catch (Exception e)
-                    {
-                        Logger.LogError($"Error occurred sending version to host: {e}");
-                    }
+                    NetworkManager.Singleton.CustomMessagingManager.SendNamedMessage("lammOS_OnNotifyVersionMismatch", 0ul, stream);
                 }
                 catch (Exception e)
                 {
-                    Logger.LogError($"Error serializing version: {e}");
+                    Logger.LogError($"Error occurred sending version to host: {e}");
                 }
             }
 
@@ -269,29 +263,21 @@ namespace lammOS.SyncedConfig
             BinaryFormatter bf = new();
             using MemoryStream stream = new(data);
 
-            try
+            string clientVersion = DeserializeFromBytes<string>(data);
+            string name = "Unknown";
+            foreach (PlayerControllerB player in StartOfRound.Instance.allPlayerScripts)
             {
-                string clientVersion = (string)bf.Deserialize(stream);
-                string name = "Unknown";
-                foreach (PlayerControllerB player in StartOfRound.Instance.allPlayerScripts)
+                if (player.actualClientId == clientId)
                 {
-                    Logger.LogInfo(player.actualClientId);
-                    Logger.LogInfo(player.usernameBillboardText.text);
-                    if (player.actualClientId == clientId)
-                    {
-                        name = player.usernameBillboardText.text;
-                        break;
-                    }
+                    name = player.usernameBillboardText.text;
+                    break;
                 }
-                Logger.LogWarning("The client '" + name + "' (" + clientId.ToString() + ") has a different version than your own, this may lead to certain synced options not syncing properly if the synced config was changed between versions! Your version: " + Instance.ModVersion + "   Client's version: " + clientVersion);
             }
-            catch (Exception e)
-            {
-                Logger.LogError($"Error deserializing instance: {e}");
-            }
+
+            Logger.LogWarning("The client '" + name + "' (" + clientId.ToString() + ") has a different version than your own, this may lead to certain synced options not syncing properly if the synced config was changed between versions! Your version: " + Instance.ModVersion + "   Client's version: " + clientVersion);
         }
 
-        internal static byte[] SerializeToBytes(SyncedConfig val)
+        internal static byte[] SerializeToBytes<T>(T val)
         {
             BinaryFormatter bf = new();
             using MemoryStream stream = new();
@@ -303,22 +289,22 @@ namespace lammOS.SyncedConfig
             }
             catch (Exception e)
             {
-                Logger.LogError($"Error serializing instance: {e}");
+                Logger.LogError($"Error serializing to bytes: {e}");
                 return null;
             }
         }
-        internal static SyncedConfig DeserializeFromBytes(byte[] data)
+        internal static T DeserializeFromBytes<T>(byte[] data)
         {
             BinaryFormatter bf = new();
             using MemoryStream stream = new(data);
 
             try
             {
-                return (SyncedConfig)bf.Deserialize(stream);
+                return (T)bf.Deserialize(stream);
             }
             catch (Exception e)
             {
-                Logger.LogError($"Error deserializing instance: {e}");
+                Logger.LogError($"Error deserializing from bytes: {e}");
                 return default;
             }
         }
