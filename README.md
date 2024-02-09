@@ -8,7 +8,7 @@ The way commands are parsed and processed by the terminal have been reworked, ma
 
 ## Specifics
 More specifically for modders or others that are curious, what I did is pre-patch the Terminal.OnSubmit method to conditionally do nothing if the player enters a valid lammOS command, which will then run my own mod's NewTerminal.OnSubmit method and thus executing the entered command. Otherwise, it'll run the default Terminal.OnSubmit method and check for terminal keyword matches as usual.
-- lammOS also removes most of the vanilla terminal keywords, so that users aren't routing to moons or buying items with the terminal keywords.
+- lammOS also removes most of the vanilla terminal keywords temporarily when the user tries to use terminal keywords instead of lammOS commands, so that users aren't routing to moons or buying items with the terminal keywords.
 
 I also pre-patched the Terminal.TextChanged method to run my own NewTerminal.OnTextChanged method, which is functionally similar but different so that it works better with lammOS.
 - Several other Terminal methods have been patched, but are less signifigant and are only there to prevent bugs or weird visuals.
@@ -116,6 +116,13 @@ Supporting translations, or mods that change text in several areas in general.
 
 
 # Changelog
+## 1.4.1
+- Made the loading synced sound clip play when you use the `>BESTIARY`command to view an entities bestiary entry.
+- Made the warning synced sound clip play when you enter the `>EJECT` command with the ShowCommandConfirmations config option enabled.
+- Fixed an incompatibility with [CozyImprovements by Spyci](https://thunderstore.io/c/lethal-company/p/Spyci/CozyImprovements/) that caused lammOS to throw an error when its TerminalMonitorAlwaysOn config option was set to true.
+- Added a check to fix an error found an initially caused by the [LC Office mod by Piggy](https://thunderstore.io/c/lethal-company/p/Piggy/LC_Office/), due to it adding 2 terminal bestiary entries for the Shrimp entity.
+- Changed when vanilla terminal keywords are removed to prevent incompatibility with some other mods, such as [AdvancedCompany by PotatoePet](https://thunderstore.io/c/lethal-company/p/PotatoePet/AdvancedCompany/). They are now only removed once the player tries to use terminal keywords instead of lammOS commands, and added right back afterwards.
+
 ## 1.4.0
 - Changed the file macros are saved within from a .es3 file to a plain .txt file in the config folder, so they are easier to share with others and save elsewhere.
   - Your existing .es3 macros file will be converted to a .txt file upon launching the game, saving your existing macros. This functionality will be removed eventually, so be sure to launch the game soon to convert the file if you want to save your macros!

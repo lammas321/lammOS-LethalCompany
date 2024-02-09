@@ -3,6 +3,7 @@ using UnityEngine;
 using static lammOS.lammOS;
 using static lammOS.Commands.Commands;
 using static lammOS.NewTerminal.NewTerminal;
+using static lammOS.Variables.Variables;
 
 namespace lammOS.Patches
 {
@@ -11,13 +12,19 @@ namespace lammOS.Patches
         [HarmonyPatch(typeof(Terminal))]
         public static class TerminalPatches
         {
+            [HarmonyPatch("Awake")]
+            [HarmonyPrefix]
+            [HarmonyPriority(2147483647)]
+            public static void PostAwake(ref Terminal __instance)
+            {
+                NewTerminal.NewTerminal.Terminal = __instance;
+            }
+
             [HarmonyPatch("Start")]
             [HarmonyPostfix]
             [HarmonyPriority(-2147483648)]
             public static void PostStart(ref Terminal __instance)
             {
-                NewTerminal.NewTerminal.Terminal = __instance;
-
                 Setup();
             }
 
@@ -53,14 +60,20 @@ namespace lammOS.Patches
             [HarmonyPriority(2147483647)]
             public static bool PreOnSubmit(ref Terminal __instance)
             {
-                if (__instance.currentNode != null && __instance.currentNode.acceptAnything)
+                if (__instance.currentNode != null && (__instance.currentNode.acceptAnything || __instance.currentNode.overrideOptions))
                 {
+                    RemoveVanillaKeywords();
                     return true;
                 }
 
                 OnSubmit();
 
-                return currentCommand == null;
+                if (currentCommand == null)
+                {
+                    RemoveVanillaKeywords();
+                    return true;
+                }
+                return false;
             }
 
             [HarmonyPatch("OnSubmit")]
@@ -68,6 +81,11 @@ namespace lammOS.Patches
             [HarmonyPriority(-2147483648)]
             public static void PostOnSubmit()
             {
+                if (terminalKeywordsBackup != null)
+                {
+                    NewTerminal.NewTerminal.Terminal.terminalNodes.allKeywords = terminalKeywordsBackup;
+                    terminalKeywordsBackup = null;
+                }
                 if (currentCommand != null && currentCommand.blockingLevel == BlockingLevel.None)
                 {
                     currentCommand = null;
