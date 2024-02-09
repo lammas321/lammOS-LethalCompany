@@ -1286,6 +1286,7 @@ namespace lammOS.Commands
                 }
 
                 terminal.newlyScannedEnemyIDs.Remove(entity.entry.creatureFileID);
+                PlaySyncedClip(terminalSyncedSounds["loading"]);
                 terminal.LoadTerminalImage(entity.entry);
                 SetTerminalText(entity.entry.displayText.TrimEnd('\n') + (entity.type == null ? "" : GenerateEntryPage(entity.type)));
             }
@@ -2018,6 +2019,7 @@ namespace lammOS.Commands
                 if (ShowCommandConfirmationsValue)
                 {
                     blockingLevel = BlockingLevel.UntilSubmission;
+                    PlaySyncedClip(terminalSyncedSounds["warning"]);
                     SetTerminalText("Are you sure you want to eject your crew? There is no going back.\nType CONFIRM to confirm your decision.");
                     return;
                 }

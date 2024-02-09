@@ -8,6 +8,7 @@ namespace lammOS.Variables
     public static class Variables
     {
         public static Dictionary<string, TerminalKeyword> terminalKeywords = new();
+        internal static TerminalKeyword[] terminalKeywordsBackup;
         public static Dictionary<string, int> terminalSyncedSounds = new()
         {
             { "buy", 0 },
@@ -598,7 +599,12 @@ namespace lammOS.Variables
 
             foreach (TerminalNode entry in entriesWithoutEntity)
             {
-                lammOS.Logger.LogWarning("The bestiary entry '" + entry.creatureName + "' could not successfully be matched to an entity. Adding as a standalone bestiary entry.");
+                if (entities.ContainsKey(entry.creatureName))
+                {
+                    lammOS.Logger.LogWarning("A bestiary entry for the entity '" + entry.creatureName + "' has already been added.");
+                    continue;
+                }
+                lammOS.Logger.LogWarning("The bestiary entry for the entity '" + entry.creatureName + "' could not successfully be matched to an entity. Adding as a standalone bestiary entry.");
                 entities.Add(entry.creatureName, new Entity(null, entry, entry.creatureName));
             }
             entriesWithoutEntity.Clear();
@@ -678,6 +684,7 @@ namespace lammOS.Variables
         
         internal static void RemoveVanillaKeywords()
         {
+            terminalKeywordsBackup = (TerminalKeyword[])NewTerminal.NewTerminal.Terminal.terminalNodes.allKeywords.Clone();
             List<TerminalKeyword> keywords = new();
             foreach (TerminalKeyword keyword in NewTerminal.NewTerminal.Terminal.terminalNodes.allKeywords)
             {
@@ -765,7 +772,10 @@ namespace lammOS.Variables
         public static int GetMoonCost(string moonId)
         {
             float multiplier = SyncedConfig.SyncedConfig.Instance.MoonPriceMultipliers.TryGetValue(moonId, out float value) ? value : -1f;
+            int moon = moons[moonId].node.buyRerouteToMoon;
+            moons[moonId].node.buyRerouteToMoon = -1;
             int cost = moons[moonId].node.itemCost;
+            moons[moonId].node.buyRerouteToMoon = moon;
             if (multiplier == -1)
             {
                 return cost;
@@ -805,7 +815,10 @@ namespace lammOS.Variables
         public static int GetUnlockableCost(string unlockableId)
         {
             float multiplier = SyncedConfig.SyncedConfig.Instance.UnlockablePriceMultipliers.TryGetValue(unlockableId, out float value) ? value : -1f;
+            int unlockable = purchasableUnlockables[unlockableId].node.shipUnlockableID;
+            purchasableUnlockables[unlockableId].node.shipUnlockableID = -1;
             int cost = purchasableUnlockables[unlockableId].node.itemCost;
+            purchasableUnlockables[unlockableId].node.shipUnlockableID = unlockable;
             if (multiplier == -1)
             {
                 return cost;
