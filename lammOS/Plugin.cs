@@ -2,6 +2,7 @@
 using BepInEx.Configuration;
 using BepInEx.Logging;
 using HarmonyLib;
+using System.Collections.Generic;
 using System.Reflection;
 using TMPro;
 using UnityEngine;
@@ -10,35 +11,26 @@ using static lammOS.Commands.Commands;
 using static lammOS.SyncedConfig.SyncedConfig;
 using static lammOS.Variables.Variables;
 
-// Terminal text color: #03e715 (3, 231, 21) (0.012, 0.906, 0.082)
-// Terminal text size: 15.6
-
 namespace lammOS
 {
-    [BepInPlugin("lammas123.lammOS", "lammOS", "1.4.1")]
+    [BepInPlugin("lammas123.lammOS", "lammOS", "1.5.0")]
     [BepInDependency("com.rune580.LethalCompanyInputUtils", MinimumDependencyVersion: "0.6.3")]
     public class lammOS : BaseUnityPlugin
     {
         internal static lammOS Instance;
         internal static new ManualLogSource Logger;
         internal static new ConfigFile Config;
+        
+        public static IReadOnlyDictionary<string, string> WeatherColors;
 
-        internal static ConfigEntry<bool> ShowCommandConfirmations;
-        public static bool ShowCommandConfirmationsValue { get; internal set; }
-        internal static ConfigEntry<int> CharsToAutocomplete;
-        public static int CharsToAutocompleteValue { get; internal set; }
-        internal static ConfigEntry<bool> ShowMinimumChars;
-        public static bool ShowMinimumCharsValue { get; internal set; }
-        internal static ConfigEntry<string> ListPaddingChar;
-        public static char ListPaddingCharValue { get; internal set; }
-        internal static ConfigEntry<string> ShowPercentagesOrRarity;
-        public static string ShowPercentagesOrRarityValue { get; internal set; }
-        internal static ConfigEntry<int> MaxCommandHistory;
-        public static int MaxCommandHistoryValue { get; internal set; }
-        internal static ConfigEntry<bool> ShowTerminalClock;
-        public static bool ShowTerminalClockValue { get; internal set; }
-        internal static ConfigEntry<bool> DisableIntroSpeech;
-        public static bool DisableIntroSpeechValue { get; internal set; }
+        public static bool ShowCommandConfirmations { get; internal set; }
+        public static int CharsToAutocomplete { get; internal set; }
+        public static bool ShowMinimumChars { get; internal set; }
+        public static char ListPaddingChar { get; internal set; }
+        public static string ShowPercentagesOrRarity { get; internal set; }
+        public static int MaxCommandHistory { get; internal set; }
+        public static bool ShowTerminalClock { get; internal set; }
+        public static bool DisableIntroSpeech { get; internal set; }
 
         internal static AudioClip savedShipIntroSpeechSFX;
 

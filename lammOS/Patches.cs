@@ -20,14 +20,6 @@ namespace lammOS.Patches
                 NewTerminal.NewTerminal.Terminal = __instance;
             }
 
-            [HarmonyPatch("Start")]
-            [HarmonyPostfix]
-            [HarmonyPriority(-2147483648)]
-            public static void PostStart(ref Terminal __instance)
-            {
-                Setup();
-            }
-
             [HarmonyPatch("QuitTerminal")]
             [HarmonyPostfix]
             [HarmonyPriority(-2147483648)]
@@ -143,7 +135,10 @@ namespace lammOS.Patches
                     previousNodeText = "";
                 }
 
-                SetBodyHelmetCameraVisibility();
+                if (NewTerminal.NewTerminal.Terminal.terminalImage.enabled)
+                {
+                    SetBodyHelmetCameraVisibility();
+                }
             }
 
             [HarmonyPatch("BuyItemsServerRpc")]
@@ -156,7 +151,7 @@ namespace lammOS.Patches
                     return true;
                 }
 
-                if (numItemsInShip > SyncedConfig.SyncedConfig.Instance.MaxDropshipItemsValue)
+                if (numItemsInShip > SyncedConfig.SyncedConfig.Instance.MaxDropshipItems)
                 {
                     lammOS.Logger.LogWarning("The item amount purchased by a client goes over max dropship items, canceling purchase");
                     __instance.SyncGroupCreditsServerRpc(__instance.groupCredits, __instance.numberOfItemsInDropship);
@@ -195,12 +190,12 @@ namespace lammOS.Patches
         [HarmonyPatch(typeof(StartOfRound))]
         public static class StartOfRoundPatches
         {
-            [HarmonyPatch("Start")]
+            [HarmonyPatch("Awake")]
             [HarmonyPostfix]
             [HarmonyPriority(-2147483648)]
             public static void PostStart()
             {
-                if (DisableIntroSpeechValue)
+                if (DisableIntroSpeech)
                 {
                     savedShipIntroSpeechSFX = StartOfRound.Instance.shipIntroSpeechSFX;
                     StartOfRound.Instance.shipIntroSpeechSFX = StartOfRound.Instance.disableSpeakerSFX;
@@ -300,6 +295,30 @@ namespace lammOS.Patches
                     bodyHelmetCameraImage.enabled = false;
                 }
             }
+
+            [HarmonyPatch("SyncShipUnlockablesClientRpc")]
+            [HarmonyPostfix]
+            [HarmonyPriority(-2147483648)]
+            public static void PostSyncShipUnlockablesClientRpc()
+            {
+                foreach (GrabbableObject item in Object.FindObjectsByType<GrabbableObject>(FindObjectsInactive.Exclude, FindObjectsSortMode.None))
+                {
+                    item.isInShipRoom = true;
+                    item.isInFactory = false;
+                }
+            }
+        }
+
+        [HarmonyPatch(typeof(RoundManager))]
+        public static class RoundManagerPatches
+        {
+            [HarmonyPatch("Start")]
+            [HarmonyPostfix]
+            [HarmonyPriority(-2147483648)]
+            public static void PostStart()
+            {
+                Setup();
+            }
         }
 
         [HarmonyPatch(typeof(HUDManager))]
@@ -310,7 +329,7 @@ namespace lammOS.Patches
             [HarmonyPriority(-2147483648)]
             public static void PostSetClock(ref HUDManager __instance)
             {
-                if (ShowTerminalClock.Value)
+                if (ShowTerminalClock)
                 {
                     ClockText.text = __instance.clockNumber.text.Replace("\n", " ");
                     return;

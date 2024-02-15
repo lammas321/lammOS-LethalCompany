@@ -17,9 +17,9 @@ namespace lammOS.SyncedConfig
     public class SyncedConfig
     {
         internal string ModVersion = BepInEx.Bootstrap.Chainloader.PluginInfos["lammas123.lammOS"].Metadata.Version.ToString();
-
-        internal int MaxDropshipItemsValue = DefaultMaxDropshipItems;
-        internal float MacroInstructionsPerSecondValue = DefaultMacroInstructionsPerSecond;
+        
+        public int MaxDropshipItems { get; internal set; } = DefaultMaxDropshipItems;
+        public float MacroInstructionsPerSecond { get; internal set; } = DefaultMacroInstructionsPerSecond;
 
         internal Dictionary<string, bool> EnabledCommands;
 
@@ -49,20 +49,20 @@ namespace lammOS.SyncedConfig
                     Config.Clear();
                 }
 
-                Instance.MaxDropshipItemsValue = Config.Bind("Synced", "MaxDropshipItems", DefaultMaxDropshipItems, "The maximum amount of items the dropship can have in it at a time.").Value;
-                if (Instance.MaxDropshipItemsValue < 1)
+                Instance.MaxDropshipItems = Config.Bind("Synced", "MaxDropshipItems", DefaultMaxDropshipItems, "The maximum amount of items the dropship can have in it at a time.").Value;
+                if (Instance.MaxDropshipItems < 1)
                 {
-                    Instance.MaxDropshipItemsValue = 1;
+                    Instance.MaxDropshipItems = 1;
                 }
 
-                Instance.MacroInstructionsPerSecondValue = Config.Bind("Synced", "MacroInstructionsPerSecond", DefaultMacroInstructionsPerSecond, "The number of macro instructions that can be ran per second, ranging from just above 0 to 100.").Value;
-                if (Instance.MacroInstructionsPerSecondValue <= 0)
+                Instance.MacroInstructionsPerSecond = Config.Bind("Synced", "MacroInstructionsPerSecond", DefaultMacroInstructionsPerSecond, "The number of macro instructions that can be ran per second, ranging from just above 0 to 100.").Value;
+                if (Instance.MacroInstructionsPerSecond <= 0)
                 {
-                    Instance.MacroInstructionsPerSecondValue = 0.001f;
+                    Instance.MacroInstructionsPerSecond = 0.001f;
                 }
-                else if (Instance.MacroInstructionsPerSecondValue > 100)
+                else if (Instance.MacroInstructionsPerSecond > 100)
                 {
-                    Instance.MacroInstructionsPerSecondValue = 100;
+                    Instance.MacroInstructionsPerSecond = 100;
                 }
 
                 Instance.EnabledCommands = new();
@@ -155,8 +155,8 @@ namespace lammOS.SyncedConfig
                 return;
             }
 
-            Instance.MaxDropshipItemsValue = DefaultMaxDropshipItems;
-            Instance.MacroInstructionsPerSecondValue = DefaultMacroInstructionsPerSecond;
+            Instance.MaxDropshipItems = DefaultMaxDropshipItems;
+            Instance.MacroInstructionsPerSecond = DefaultMacroInstructionsPerSecond;
             Instance.EnabledCommands = new();
             Instance.MoonPriceMultipliers = new();
             Instance.ItemPriceMultipliers = new();
@@ -234,8 +234,8 @@ namespace lammOS.SyncedConfig
                 }
             }
 
-            Instance.MaxDropshipItemsValue = newConfig.MaxDropshipItemsValue;
-            Instance.MacroInstructionsPerSecondValue = newConfig.MacroInstructionsPerSecondValue;
+            Instance.MaxDropshipItems = newConfig.MaxDropshipItems;
+            Instance.MacroInstructionsPerSecond = newConfig.MacroInstructionsPerSecond;
             Instance.EnabledCommands = newConfig.EnabledCommands;
             Instance.MoonPriceMultipliers = newConfig.MoonPriceMultipliers;
             Instance.ItemPriceMultipliers = newConfig.ItemPriceMultipliers;

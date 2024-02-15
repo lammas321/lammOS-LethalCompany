@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
 using static lammOS.lammOS;
@@ -124,61 +125,87 @@ namespace lammOS.Variables
                 Config.Clear();
             }
 
-            ShowCommandConfirmations = Config.Bind("General", "ShowCommandConfirmations", true, "If commands like >BUY should ask you for confirmation before doing something.");
-            ShowCommandConfirmationsValue = ShowCommandConfirmations.Value;
-
-            CharsToAutocomplete = Config.Bind("General", "CharsToAutocomplete", 3, "The amount of characters required to autocomplete an argument, such as when buying an item, the minimum value is 1. Values over the length of an argument will be treated as the length of the argument to avoid errors, meaning you'll have to type the full name of the argument and no autocompleting can occur.");
-            if (CharsToAutocomplete.Value < 1)
+            // Colors
+            Dictionary<string, string> weatherColors = new();
+            Dictionary<string, string> defaultWeatherColors = new()
             {
-                CharsToAutocomplete.Value = 1;
-            }
-            CharsToAutocompleteValue = CharsToAutocomplete.Value;
-
-            ShowMinimumChars = Config.Bind("General", "ShowMinimumChars", false, "If the minimum characters required for the terminal to autocomplete an argument should be shown. For example: 'p' when buying a pro flashlight, or 'te' for the teleporter, while 'telev' is the minimum for the television. Having this on all the time doesn't look the greatest, but it helps when learning typing shortcuts.");
-            ShowMinimumCharsValue = ShowMinimumChars.Value;
-
-            ListPaddingChar = Config.Bind("General", "ListPaddingChar", ".", "The character that should be used when adding padding to lists. If you want to use a space, the config parser will trim it out, but I will check if the config is empty and replace it with a space.");
-            if (ListPaddingChar.Value == "")
+                { "Foggy", "#666666" },
+                { "Rainy", "#FFFF00" },
+                { "Stormy", "#FF7700" },
+                { "Flooded", "#FF0000" },
+                { "Eclipsed", "#AA0000" }
+            };
+            foreach (string weatherName in Enum.GetNames(typeof(LevelWeatherType)))
             {
-                ListPaddingChar.Value = " ";
+                if (weatherName == "None" || weatherName == "DustClouds")
+                {
+                    continue;
+                }
+                var configWeatherColor = Config.Bind("Colors", "Weather_" + weatherName + "_Color", "null");
+                configWeatherColor.Value = Commands.Commands.Command.RemoveRichText(configWeatherColor.Value);
+                if (configWeatherColor.Value == "null")
+                {
+                    if (defaultWeatherColors.ContainsKey(weatherName))
+                    {
+                        configWeatherColor.Value = defaultWeatherColors[weatherName];
+                    }
+                    else
+                    {
+                        configWeatherColor.Value = "#03e715";
+                    }
+                }
+                weatherColors.Add(weatherName, configWeatherColor.Value);
             }
-            else if (ListPaddingChar.Value.Length != 1)
-            {
-                ListPaddingChar.Value = ".";
-            }
-            ListPaddingCharValue = ListPaddingChar.Value.ToCharArray()[0];
+            WeatherColors = weatherColors;
+            
+            // General
+            ShowCommandConfirmations = Config.Bind("General", "ShowCommandConfirmations", true, "If commands like >BUY should ask you for confirmation before doing something.").Value;
 
-            ShowPercentagesOrRarity = Config.Bind("General", "ShowPercentagesOrRarity", "Percentage", "Whether a percentage (%) or rarity (fraction) should be shown next to things that have a chance of happening. Percentage or Rarity");
-            if (ShowPercentagesOrRarity.Value != "Percentage" && ShowPercentagesOrRarity.Value != "Rarity")
+            var configCharsToAutocomplete = Config.Bind("General", "CharsToAutocomplete", 3, "The amount of characters required to autocomplete an argument, such as when buying an item, the minimum value is 1. Values over the length of an argument will be treated as the length of the argument to avoid errors, meaning you'll have to type the full name of the argument and no autocompleting can occur.");
+            if (configCharsToAutocomplete.Value < 1)
             {
-                ShowPercentagesOrRarity.Value = "Percentage";
+                configCharsToAutocomplete.Value = 1;
             }
-            ShowPercentagesOrRarityValue = ShowPercentagesOrRarity.Value;
+            CharsToAutocomplete = configCharsToAutocomplete.Value;
 
-            MaxCommandHistory = Config.Bind("General", "MaxCommandHistory", 25, "How far back the terminal should remember commands you've typed in, the minimum value is 1 and the maximum is 100.");
-            if (MaxCommandHistory.Value < 1)
+            ShowMinimumChars = Config.Bind("General", "ShowMinimumChars", false, "If the minimum characters required for the terminal to autocomplete an argument should be shown. For example: 'p' when buying a pro flashlight, or 'te' for the teleporter, while 'telev' is the minimum for the television. Having this on all the time doesn't look the greatest, but it helps when learning typing shortcuts.").Value;
+            
+            var configListPaddingChar = Config.Bind("General", "ListPaddingChar", ".", "The character that should be used when adding padding to lists. If you want to use a space, the config parser will trim it out, but I will check if the config is empty and replace it with a space.");
+            if (configListPaddingChar.Value == "")
             {
-                MaxCommandHistory.Value = 1;
+                configListPaddingChar.Value = " ";
             }
-            else if (MaxCommandHistory.Value > 100)
+            ListPaddingChar = configListPaddingChar.Value[0];
+
+            var configShowPercentagesOrRarity = Config.Bind("General", "ShowPercentagesOrRarity", "Percentage", "Whether a percentage (%) or rarity (fraction) should be shown next to things that have a chance of happening. Percentage or Rarity");
+            if (configShowPercentagesOrRarity.Value != "Percentage" && configShowPercentagesOrRarity.Value != "Rarity")
             {
-                MaxCommandHistory.Value = 100;
+                configShowPercentagesOrRarity.Value = "Percentage";
             }
-            MaxCommandHistoryValue = MaxCommandHistory.Value;
+            ShowPercentagesOrRarity = configShowPercentagesOrRarity.Value;
 
-            ShowTerminalClock = Config.Bind("General", "ShowTerminalClock", true, "If the terminal clock should be shown in the top right corner or not.");
-            ShowTerminalClockValue = ShowTerminalClock.Value;
+            var configMaxCommandHistory = Config.Bind("General", "MaxCommandHistory", 25, "How far back the terminal should remember commands you've typed in, the minimum value is 1 and the maximum is 100.");
+            if (configMaxCommandHistory.Value < 1)
+            {
+                configMaxCommandHistory.Value = 1;
+            }
+            else if (configMaxCommandHistory.Value > 100)
+            {
+                configMaxCommandHistory.Value = 100;
+            }
+            MaxCommandHistory = configMaxCommandHistory.Value;
 
-            DisableIntroSpeech = Config.Bind("General", "DisableIntroSpeech", false, "If the intro speech should be disabled.");
-            DisableIntroSpeechValue = DisableIntroSpeech.Value;
+            ShowTerminalClock = Config.Bind("General", "ShowTerminalClock", true, "If the terminal clock should be shown in the top right corner or not.").Value;
+
+            DisableIntroSpeech = Config.Bind("General", "DisableIntroSpeech", false, "If the intro speech should be disabled.").Value;
             if (StartOfRound.Instance != null)
             {
-                if (DisableIntroSpeechValue && savedShipIntroSpeechSFX == null)
+                if (DisableIntroSpeech && savedShipIntroSpeechSFX == null)
                 {
                     savedShipIntroSpeechSFX = StartOfRound.Instance.shipIntroSpeechSFX;
                     StartOfRound.Instance.shipIntroSpeechSFX = StartOfRound.Instance.disableSpeakerSFX;
                 }
-                else if (!DisableIntroSpeechValue && savedShipIntroSpeechSFX != null)
+                else if (!DisableIntroSpeech && savedShipIntroSpeechSFX != null)
                 {
                     StartOfRound.Instance.shipIntroSpeechSFX = savedShipIntroSpeechSFX;
                     savedShipIntroSpeechSFX = null;
@@ -281,7 +308,7 @@ namespace lammOS.Variables
 
             foreach (string moonId in moons.Keys)
             {
-                for (int i = Mathf.Min(moonId.Length, CharsToAutocomplete.Value); i <= moonId.Length; i++)
+                for (int i = Mathf.Min(moonId.Length, CharsToAutocomplete); i <= moonId.Length; i++)
                 {
                     string shortestChars = moonId.Substring(0, i);
                     bool shortest = true;
@@ -320,7 +347,7 @@ namespace lammOS.Variables
 
             foreach (string itemId in purchasableItems.Keys)
             {
-                for (int i = Mathf.Min(itemId.Length, CharsToAutocomplete.Value); i < itemId.Length; i++)
+                for (int i = Mathf.Min(itemId.Length, CharsToAutocomplete); i < itemId.Length; i++)
                 {
                     string shortestChars = itemId.Substring(0, i);
                     bool shortest = true;
@@ -386,7 +413,7 @@ namespace lammOS.Variables
 
             foreach (string unlockableId in purchasableUnlockables.Keys)
             {
-                for (int i = Mathf.Min(unlockableId.Length, CharsToAutocomplete.Value); i < unlockableId.Length; i++)
+                for (int i = Mathf.Min(unlockableId.Length, CharsToAutocomplete); i < unlockableId.Length; i++)
                 {
                     string shortestChars = unlockableId.Substring(0, i);
                     bool shortest = true;
@@ -611,7 +638,7 @@ namespace lammOS.Variables
 
             foreach (Entity entity in entities.Values)
             {
-                for (int i = Mathf.Min(entity.name.Length, CharsToAutocomplete.Value); i < entity.name.Length; i++)
+                for (int i = Mathf.Min(entity.name.Length, CharsToAutocomplete); i < entity.name.Length; i++)
                 {
                     string shortestChars = entity.name.Substring(0, i).ToLower();
                     bool shortest = true;
@@ -651,7 +678,7 @@ namespace lammOS.Variables
 
             foreach (string logId in logs.Keys)
             {
-                for (int i = Mathf.Min(logId.Length, CharsToAutocomplete.Value); i <= logId.Length; i++)
+                for (int i = Mathf.Min(logId.Length, CharsToAutocomplete); i <= logId.Length; i++)
                 {
                     string shortestChars = logId.Substring(0, i);
                     bool shortest = true;
@@ -761,14 +788,6 @@ namespace lammOS.Variables
         public static readonly int DefaultMaxDropshipItems = 12;
         public static readonly float DefaultMacroInstructionsPerSecond = 5f;
 
-        public static int GetMaxDropshipItems()
-        {
-            return SyncedConfig.SyncedConfig.Instance.MaxDropshipItemsValue;
-        }
-        public static float GetMacroInstructionsPerSecond()
-        {
-            return SyncedConfig.SyncedConfig.Instance.MacroInstructionsPerSecondValue;
-        }
         public static int GetMoonCost(string moonId)
         {
             float multiplier = SyncedConfig.SyncedConfig.Instance.MoonPriceMultipliers.TryGetValue(moonId, out float value) ? value : -1f;

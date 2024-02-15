@@ -328,7 +328,7 @@ namespace lammOS.Commands
                         categories[command.category] = new();
                     }
 
-                    categories[command.category].Add(">" + (command.id.ToUpper() + " ").PadRight(length, ListPaddingCharValue) + " >" + shortcut.ToUpper() + "\n");
+                    categories[command.category].Add(">" + (command.id.ToUpper() + " ").PadRight(length, ListPaddingChar) + " >" + shortcut.ToUpper() + "\n");
                 }
 
                 string result = "";
@@ -363,7 +363,12 @@ namespace lammOS.Commands
             {
                 if (moon.level.currentWeather != LevelWeatherType.None)
                 {
-                    return " (" + moon.level.currentWeather.ToString() + ") ";
+                    string weather = moon.level.currentWeather.ToString();
+                    if (WeatherColors.ContainsKey(weather))
+                    {
+                        weather = "<color=" + WeatherColors[weather] + ">" + weather + "</color>";
+                    }
+                    return " (" + weather + ") " + (moon.level.spawnEnemiesAndScrap ? "" : "(" + ((int)(StartOfRound.Instance.companyBuyingRate * 100f)).ToString() + "%) ");
                 }
                 if (!moon.level.spawnEnemiesAndScrap)
                 {
@@ -382,7 +387,7 @@ namespace lammOS.Commands
             }
             public static void GenerateMoonIndex(Moon moon, List<List<string>> itemLists)
             {
-                itemLists[0].Add((ShowMinimumCharsValue ? "(" + moon.shortestChars + ") " : "") + (moon.name == "71 Gordion" ? "The Company building" : moon.shortName) + " ");
+                itemLists[0].Add((ShowMinimumChars ? "(" + moon.shortestChars + ") " : "") + (moon.name == "71 Gordion" ? "The Company building" : moon.shortName) + " ");
                 itemLists[1].Add(GenerateMoonIndexWeather(moon));
                 itemLists[2].Add(GenerateMoonIndexCost(moon));
             }
@@ -443,7 +448,7 @@ namespace lammOS.Commands
 
             public static string GeneratePercentageOrRarity(int rarity, int totalRarity)
             {
-                if (ShowPercentagesOrRarityValue == "Percentage")
+                if (ShowPercentagesOrRarity == "Percentage")
                 {
                     return (rarity * 100 / (float)totalRarity).ToString() + "%";
                 }
@@ -664,7 +669,8 @@ namespace lammOS.Commands
                 }
 
                 string cost = MoonsCommand.GenerateMoonIndexCost(moon);
-                string result = moon.styledName + MoonsCommand.GenerateMoonIndexWeather(moon) + (cost == null ? "" : "$" + cost) + "\n\n" + moon.level.LevelDescription;
+                string weather = MoonsCommand.GenerateMoonIndexWeather(moon);
+                string result = moon.styledName + (weather ?? " ") + (cost == null ? "" : "$" + cost) + "\n\n" + moon.level.LevelDescription;
 
                 if (moon.level.spawnEnemiesAndScrap)
                 {
@@ -725,7 +731,7 @@ namespace lammOS.Commands
 
                 this.moon = moon;
 
-                if (ShowCommandConfirmationsValue)
+                if (ShowCommandConfirmations)
                 {
                     blockingLevel = BlockingLevel.UntilSubmission;
                     SetTerminalText("Would you like to route to " + moon.level.PlanetName + " for $" + GetMoonCost(resultId).ToString() + "?\nType CONFIRM to confirm routing.");
@@ -815,12 +821,12 @@ namespace lammOS.Commands
 
                 foreach (PurchasableItem purchasableItem in purchasableItems.Values)
                 {
-                    itemLists[0].Add((ShowMinimumCharsValue ? "(" + purchasableItem.shortestChars + ") " : "") + purchasableItem.item.itemName + " ");
+                    itemLists[0].Add((ShowMinimumChars ? "(" + purchasableItem.shortestChars + ") " : "") + purchasableItem.item.itemName + " ");
                     itemLists[1].Add(GetItemCost(purchasableItem.item.itemName.ToLower(), true).ToString());
                     itemLists[2].Add(purchasableItem.salePercentage == 100 ? null : (100 - purchasableItem.salePercentage).ToString());
                 }
 
-                return "Welcome to the Company store!\n" + NewTerminal.NewTerminal.Terminal.numberOfItemsInDropship.ToString() + "/" + SyncedConfig.SyncedConfig.Instance.MaxDropshipItemsValue + " items are in the dropship.\nUse the BUY command to buy any items listed here:\n" + HandleListPadding(itemLists, new List<string>() { " * {ITEM}", " ${ITEM} ", "{ITEM}% OFF " }, new List<string>() { "", "right", "right" });
+                return "Welcome to the Company store!\n" + NewTerminal.NewTerminal.Terminal.numberOfItemsInDropship.ToString() + "/" + SyncedConfig.SyncedConfig.Instance.MaxDropshipItems + " items are in the dropship.\nUse the BUY command to buy any items listed here:\n" + HandleListPadding(itemLists, new List<string>() { " * {ITEM}", " ${ITEM} ", "{ITEM}% OFF " }, new List<string>() { "", "right", "right" });
             }
             public static string GenerateUpgrades()
             {
@@ -846,7 +852,7 @@ namespace lammOS.Commands
                 upgrades.Sort((x, y) => GetUnlockableCost(x.node.creatureName.ToLower()) - GetUnlockableCost(y.node.creatureName.ToLower()));
                 foreach (PurchasableUnlockable purchasableUnlockable in upgrades)
                 {
-                    itemLists[0].Add((ShowMinimumCharsValue ? "(" + purchasableUnlockable.shortestChars + ") " : "") + purchasableUnlockable.node.creatureName + " ");
+                    itemLists[0].Add((ShowMinimumChars ? "(" + purchasableUnlockable.shortestChars + ") " : "") + purchasableUnlockable.node.creatureName + " ");
                     itemLists[1].Add(GetUnlockableCost(purchasableUnlockable.node.creatureName.ToLower()).ToString());
                 }
 
@@ -865,7 +871,7 @@ namespace lammOS.Commands
                     PurchasableUnlockable purchasableUnlockable = purchasableUnlockables[decorNode.creatureName.ToLower()];
                     if (purchasableUnlockable != null && !purchasableUnlockable.unlockable.hasBeenUnlockedByPlayer && !purchasableUnlockable.unlockable.alreadyUnlocked)
                     {
-                        itemLists[0].Add((ShowMinimumCharsValue ? "(" + purchasableUnlockable.shortestChars + ") " : "") + purchasableUnlockable.node.creatureName + " ");
+                        itemLists[0].Add((ShowMinimumChars ? "(" + purchasableUnlockable.shortestChars + ") " : "") + purchasableUnlockable.node.creatureName + " ");
                         itemLists[1].Add(GetUnlockableCost(purchasableUnlockable.node.creatureName.ToLower()).ToString());
                     }
                 }
@@ -947,7 +953,7 @@ namespace lammOS.Commands
                 this.purchasableItem = purchasableItem;
                 this.amount = amount;
 
-                if (ShowCommandConfirmationsValue)
+                if (ShowCommandConfirmations)
                 {
                     blockingLevel = BlockingLevel.UntilSubmission;
                     SetTerminalText("Would you like to purchase " + purchasableItem.item.itemName + " x" + amount.ToString() + " for $" + (GetItemCost(purchasableItem.item.itemName.ToLower(), true) * amount).ToString() + "?\nType CONFIRM to confirm your purchase.");
@@ -981,7 +987,7 @@ namespace lammOS.Commands
 
                 this.purchasableUnlockable = purchasableUnlockable;
 
-                if (ShowCommandConfirmationsValue)
+                if (ShowCommandConfirmations)
                 {
                     blockingLevel = BlockingLevel.UntilSubmission;
                     SetTerminalText("Would you like to purchase a " + purchasableUnlockable.node.creatureName + " for $" + GetUnlockableCost(purchasableUnlockable.node.creatureName.ToLower()).ToString() + "?\nType CONFIRM to confirm your purchase.");
@@ -1019,9 +1025,9 @@ namespace lammOS.Commands
                     ErrorResponse("You do not have enough credits to purchase that item.");
                     return;
                 }
-                if (amount + terminal.numberOfItemsInDropship > SyncedConfig.SyncedConfig.Instance.MaxDropshipItemsValue)
+                if (amount + terminal.numberOfItemsInDropship > SyncedConfig.SyncedConfig.Instance.MaxDropshipItems)
                 {
-                    ErrorResponse("There is not enough space on the dropship for these items, there are currently " + terminal.numberOfItemsInDropship.ToString() + "/" + SyncedConfig.SyncedConfig.Instance.MaxDropshipItemsValue.ToString() + " items en route.");
+                    ErrorResponse("There is not enough space on the dropship for these items, there are currently " + terminal.numberOfItemsInDropship.ToString() + "/" + SyncedConfig.SyncedConfig.Instance.MaxDropshipItems.ToString() + " items en route.");
                     return;
                 }
 
@@ -1138,7 +1144,7 @@ namespace lammOS.Commands
                 {
                     if (unlockable.unlockable.inStorage)
                     {
-                        unlockables.Add((ShowMinimumCharsValue ? "(" + unlockable.shortestChars + ") " : "") + unlockable.node.creatureName);
+                        unlockables.Add((ShowMinimumChars ? "(" + unlockable.shortestChars + ") " : "") + unlockable.node.creatureName);
                     }
                 }
 
@@ -1228,7 +1234,7 @@ namespace lammOS.Commands
                 {
                     if (entity.entry != null && terminal.scannedEnemyIDs.Contains(entity.entry.creatureFileID))
                     {
-                        entitiesList.Add((terminal.newlyScannedEnemyIDs.Contains(entity.entry.creatureFileID) ? "(!) " : "") + (ShowMinimumCharsValue ? "(" + entity.shortestChars + ") " : "") + entity.name);
+                        entitiesList.Add((terminal.newlyScannedEnemyIDs.Contains(entity.entry.creatureFileID) ? "(!) " : "") + (ShowMinimumChars ? "(" + entity.shortestChars + ") " : "") + entity.name);
                     }
                 }
 
@@ -1315,7 +1321,7 @@ namespace lammOS.Commands
                 {
                     if (terminal.unlockedStoryLogs.Contains(log.log.storyLogFileID))
                     {
-                        logsList.Add((terminal.newlyUnlockedStoryLogs.Contains(log.log.storyLogFileID) ? "(!) " : "") + (ShowMinimumCharsValue ? "(" + log.shortestChars + ") " : "") + log.log.creatureName);
+                        logsList.Add((terminal.newlyUnlockedStoryLogs.Contains(log.log.storyLogFileID) ? "(!) " : "") + (ShowMinimumChars ? "(" + log.shortestChars + ") " : "") + log.log.creatureName);
                     }
                 }
                 return "Sigurd's Log Entries.\nRead an entry by entering SIGURD followed by the name of the entry you wish to read.\n" + HandleListPadding(new() { logsList }, new List<string>() { " * {ITEM} " }, new List<string>() { "" });
@@ -1628,7 +1634,7 @@ namespace lammOS.Commands
 
             public override void Execute(Terminal terminal, string input)
             {
-                if (ShowCommandConfirmationsValue)
+                if (ShowCommandConfirmations)
                 {
                     blockingLevel = BlockingLevel.UntilSubmission;
                     SetTerminalText("Would you like to pull the lever to land on " + StartOfRound.Instance.currentLevel.PlanetName + "?\nType CONFIRM to confirm landing.");
@@ -1694,7 +1700,7 @@ namespace lammOS.Commands
 
             public override void Execute(Terminal terminal, string input)
             {
-                if (ShowCommandConfirmationsValue)
+                if (ShowCommandConfirmations)
                 {
                     blockingLevel = BlockingLevel.UntilSubmission;
                     SetTerminalText("Would you like to pull the lever to launch into orbit?\nType CONFIRM to confirm landing.");
@@ -2016,7 +2022,7 @@ namespace lammOS.Commands
                     return;
                 }
 
-                if (ShowCommandConfirmationsValue)
+                if (ShowCommandConfirmations)
                 {
                     blockingLevel = BlockingLevel.UntilSubmission;
                     PlaySyncedClip(terminalSyncedSounds["warning"]);
@@ -2169,7 +2175,7 @@ namespace lammOS.Commands
                     }
                     ForceScrollbar(-1);
 
-                    float time = 1f / GetMacroInstructionsPerSecond() - (Time.time - start);
+                    float time = 1f / DefaultMacroInstructionsPerSecond - (Time.time - start);
                     if (time > 0)
                     {
                         yield return new WaitForSeconds(time);
@@ -2879,14 +2885,52 @@ namespace lammOS.Commands
             }
             public static bool CheckNotEnoughChars(int inputLength, int resultLength)
             {
-                if (inputLength < Mathf.Min(CharsToAutocompleteValue, resultLength))
+                if (inputLength < Mathf.Min(CharsToAutocomplete, resultLength))
                 {
-                    ErrorResponse("Not enough characters were input to autocomplete a result. The current requirement is " + CharsToAutocompleteValue.ToString() + " characters.");
+                    ErrorResponse("Not enough characters were input to autocomplete a result. The current requirement is " + CharsToAutocomplete.ToString() + " characters.");
                     return true;
                 }
                 return false;
             }
 
+            public static string RemoveRichText(string text)
+            {
+                int startIndex = -1;
+                for (int i = 0; i < text.Length; i++)
+                {
+                    if (startIndex == -1)
+                    {
+                        if (text[i] == '<')
+                        {
+                            startIndex = i;
+                        }
+                        continue;
+                    }
+                    if (text[i] == '>')
+                    {
+                        text = text.Substring(0, startIndex) + text.Substring(i + 1);
+                        i = startIndex - 1;
+                        startIndex = -1;
+                    }
+                }
+                return text;
+            }
+            public static string PadRichTextLeft(string text, int desiredLength, char padding = ' ')
+            {
+                for (int i = RemoveRichText(text).Length; i < desiredLength; i++)
+                {
+                    text = padding + text;
+                }
+                return text;
+            }
+            public static string PadRichTextRight(string text, int desiredLength, char padding = ' ')
+            {
+                for (int i = RemoveRichText(text).Length; i < desiredLength; i++)
+                {
+                    text += padding;
+                }
+                return text;
+            }
             public static string HandleListPadding(List<List<string>> itemLists, List<string> itemFormats, List<string> itemAlignments, bool separator = true)
             {
                 int totalLength = 0;
@@ -2902,14 +2946,14 @@ namespace lammOS.Commands
                         {
                             continue;
                         }
-                        int itemLength = itemFormats[i].Replace("{ITEM}", items[j]).Length;
+                        int itemLength = RemoveRichText(itemFormats[i].Replace("{ITEM}", items[j])).Length;
                         if (itemLength > length)
                         {
                             length = itemLength;
                         }
                     }
                     totalLength += length;
-                    length -= itemFormats[i].Replace("{ITEM}", "").Length;
+                    length -= RemoveRichText(itemFormats[i].Replace("{ITEM}", "")).Length;
                     lengths.Add(length);
                 }
 
@@ -2924,7 +2968,7 @@ namespace lammOS.Commands
                         {
                             if (hasContent)
                             {
-                                text = new string(ListPaddingCharValue, lengths[j]) + text;
+                                text = new string(ListPaddingChar, lengths[j]) + text;
                             }
                             continue;
                         }
@@ -2933,27 +2977,27 @@ namespace lammOS.Commands
                         {
                             case "right":
                                 {
-                                    itemLists[j][i] = itemLists[j][i].PadLeft(lengths[j]);
+                                    itemLists[j][i] = PadRichTextLeft(itemLists[j][i], lengths[j]);
                                     break;
                                 }
                             case "rightChar":
                                 {
                                     if (hasContent)
                                     {
-                                        itemLists[j][i] = itemLists[j][i].PadLeft(lengths[j], ListPaddingCharValue);
+                                        itemLists[j][i] = PadRichTextLeft(itemLists[j][i], lengths[j], ListPaddingChar);
                                     }
                                     break;
                                 }
                             case "left":
                                 {
-                                    itemLists[j][i] = itemLists[j][i].PadRight(lengths[j]);
+                                    itemLists[j][i] = PadRichTextRight(itemLists[j][i], lengths[j]);
                                     break;
                                 }
                             default:
                                 {
                                     if (hasContent)
                                     {
-                                        itemLists[j][i] = itemLists[j][i].PadRight(lengths[j], ListPaddingCharValue);
+                                        itemLists[j][i] = PadRichTextRight(itemLists[j][i], lengths[j], ListPaddingChar);
                                     }
                                     break;
                                 }
@@ -2969,7 +3013,7 @@ namespace lammOS.Commands
                 string output = string.Join('\n', result);
                 if (separator)
                 {
-                    output = "+" + new string('-', Mathf.Min(MaxTerminalCharWidth, totalLength) - 2) + "+\n" + output;
+                    output = "+" + new string('-', Mathf.Min(MaxTerminalLineWidth, totalLength) - 2) + "+\n" + output;
                 }
                 return output;
             }

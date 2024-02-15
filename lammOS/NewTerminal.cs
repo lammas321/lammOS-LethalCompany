@@ -10,7 +10,7 @@ namespace lammOS.NewTerminal
     {
         public static Terminal Terminal { get; internal set; }
         public static int inputIndex { get; internal set; } = 0;
-        public static readonly int MaxTerminalCharWidth = 50;
+        public static readonly int MaxTerminalLineWidth = 50;
 
         public static Command currentCommand { get; internal set; } = null;
 
@@ -204,7 +204,7 @@ namespace lammOS.NewTerminal
             if (saveSubmissionsToHistory)
             {
                 commandHistory.Add(input);
-                while (commandHistory.Count > MaxCommandHistoryValue)
+                while (commandHistory.Count > MaxCommandHistory)
                 {
                     commandHistory.RemoveAt(0);
                 }
