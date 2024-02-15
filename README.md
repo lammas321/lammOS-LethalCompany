@@ -26,8 +26,7 @@ Commands like `>MOON` and `>BESTIARY` will show even more details about the moon
 The `>STORE` command will hide upgrades and other decorations that have already been purchased.
 
 The `>SCAN` command now shows three categories for scanned items: in the ship, inside the building, and outside, as well as what items are at these locations and their values.
-- As of v49, joining lobbies will show any scrap in the ship as being inside until they are picked up and dropped, this does not occur if you are the host.
-- Additionally, bee hives will appear as being inside instead of outside until they are picked up and dropped.
+- Bee hives will appear as being indoors instead of outdoors until they are picked up at least once.
 
 The `>VIEW MONITOR` command has been simplified to `>MONITOR`, or simply `>V` with the command's shortcut, and the monitor now shows up instantly rather than slowly loading after entering the command.
 
@@ -89,6 +88,8 @@ You can optionally disable the introduction speech with the DisableIntroSpeech c
 # What's Planned
 Potentially changing more of the text within the terminal to use other colors.
 
+Allowing sorting of items and moons in the `>STORE` and `>MOONS` command lists by name and by their cost.
+
 Maybe adding conditional or looping instructions to macros? Maybe variables and being able to take user input?
 
 Showing the entity's base health when viewing one using the `>BESTIARY` command.
@@ -108,7 +109,7 @@ Supporting translations, or mods that change text in several areas in general.
 
 [OpenBodyCams by Zaggy1024](https://thunderstore.io/c/lethal-company/p/Zaggy1024/OpenBodyCams/)
 - The helmet camera can sometimes become frozen on the terminal when using the `>MONITOR` command if the monitor isn't visible on the actual monitor.
-  - I think it may be caused by OpenBodyCams freezing the camera to improve performance if it isn't visible on the monitor, though I'm not entirely sure.
+  - I think it may be caused by OpenBodyCams freezing the camera to improve performance if it isn't visible on the monitor, though I'm not entirely sure as it can be inconsistent.
 
 
 # Contact
@@ -116,6 +117,15 @@ Supporting translations, or mods that change text in several areas in general.
 
 
 # Changelog
+## 1.5.0
+- Made a couple of changes to how the config's and synced config's values are saved in the code, your existing configs should be fine.
+- Added a Color category to the config and added some options to allow changing the text color for types of weather for moons.
+  - I'm open to suggestions for other things to give text color to, I just saw this as a good starting point.
+- Made it so all grabbable items upon joining a game are marked as in the ship, rather than indoors. This fixes a bug with the `>SCAN` command that caused all items to be considered indoors until they were picked up and dropped.
+- Fixed a slight bug with helmet/body camera mods and [CozyImprovements by Spyci](https://thunderstore.io/c/lethal-company/p/Spyci/CozyImprovements/) if the TerminalMonitorAlwaysOn config option was enabled, which caused the ship's external camera to show up on the monitor.
+- Fixed an incompatibility with [StarlancerMoons by AudioKnight](https://thunderstore.io/c/lethal-company/p/AudioKnight/StarlancerMoons/) that caused its additional moons to not be shown by and unable to be used with the `>MOONS`, `>MOON`, and `>ROUTE` commands until you used the `>RELOAD` command.
+  - This was done by waiting to load and cache information until the RoundManager.Start method has been called, rather than after Terminal.Start. This problem originates from [LethalLevelLoader by IAmBatby](https://thunderstore.io/c/lethal-company/p/IAmBatby/LethalLevelLoader/) waiting to update information regarding moons after the RoundManager.Start method, and StarLancerMoons specifically not using LethalLevelLoaders API, instead letting LethalLevelLoader retrieve and parse it's .lethalbundle files on its own.
+
 ## 1.4.1
 - Made the loading synced sound clip play when you use the `>BESTIARY`command to view an entities bestiary entry.
 - Made the warning synced sound clip play when you enter the `>EJECT` command with the ShowCommandConfirmations config option enabled.
